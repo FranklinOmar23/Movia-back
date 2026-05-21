@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger');
 require('dotenv').config();
 
 // Rutas
@@ -20,6 +22,9 @@ app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(cors());
 app.use(express.json());
 
+// Documentación Swagger
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 // Health check rápido
 app.get('/', (req, res) => {
   res.json({ message: 'MOVIA API funcionando 🎬' });
@@ -37,5 +42,6 @@ startDailyJob();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor MOVIA corriendo en http://localhost:${PORT}`);
-  console.log(`📅 Job de cobros diarios programado`);
+  console.log(`� Documentación Swagger disponible en http://localhost:${PORT}/api-docs`);
+  console.log(`�📅 Job de cobros diarios programado`);
 });

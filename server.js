@@ -19,7 +19,7 @@ const app = express();
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
 // Middlewares globales
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Swagger UI

@@ -2,7 +2,7 @@
  * @swagger
  * tags:
  *   name: Admin
- *   description: Panel de administración - Gestión de usuarios, suscripciones y transacciones
+ *   description: Panel de administración - Gestión de usuarios, suscripciones, transacciones y planes
  */
 
 const express = require('express');
@@ -20,7 +20,7 @@ const adminController = require('../controllers/adminController');
  *   get:
  *     tags: [Admin]
  *     summary: Obtener estadísticas del dashboard
- *     description: Retorna totalUsers, activeUsers, activeSubscriptions, mrr, pendingPayments, failedPayments
+ *     description: Retorna totalUsers, activeUsers, activeSubscriptions, mrr, ingresos, pagos, tasa de crecimiento
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -37,24 +37,193 @@ const adminController = require('../controllers/adminController');
  *                 activeUsers:
  *                   type: integer
  *                   example: 120
+ *                 newUsersThisMonth:
+ *                   type: integer
+ *                   example: 15
  *                 activeSubscriptions:
  *                   type: integer
  *                   example: 100
+ *                 usersUpToDate:
+ *                   type: integer
+ *                   example: 85
+ *                 usersOverdue:
+ *                   type: integer
+ *                   example: 15
  *                 mrr:
  *                   type: number
  *                   example: 799.00
+ *                 currentMonthRevenue:
+ *                   type: number
+ *                   example: 1250.50
+ *                 lastMonthRevenue:
+ *                   type: number
+ *                   example: 1100.00
+ *                 growthRate:
+ *                   type: number
+ *                   example: 13.68
  *                 pendingPayments:
  *                   type: integer
  *                   example: 5
  *                 failedPayments:
  *                   type: integer
  *                   example: 3
+ *                 successfulPayments:
+ *                   type: integer
+ *                   example: 45
  *       401:
  *         description: No autorizado - Token inválido o no proporcionado
  *       403:
  *         description: Prohibido - No tiene rol de administrador
  */
 router.get('/stats', adminAuth, adminController.getStats);
+
+// ──────────────────────────────────────────────────────
+// PLANES (ADMIN CRUD)
+// ──────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/admin/plans:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Obtener todos los planes (admin)
+ *     description: Retorna todos los planes incluyendo inactivos
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de planes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   name:
+ *                     type: string
+ *                   description:
+ *                     type: string
+ *                   price:
+ *                     type: number
+ *                   currency:
+ *                     type: string
+ *                   billing_interval:
+ *                     type: string
+ *                   is_active:
+ *                     type: boolean
+ */
+router.get('/plans', adminAuth, adminController.getPlans);
+
+/**
+ * @swagger
+ * /api/admin/plans:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Crear un nuevo plan
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - price
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Plan Oro
+ *               description:
+ *                 type: string
+ *                 example: Acceso ilimitado en 4K
+ *               price:
+ *                 type: number
+ *                 example: 15.99
+ *               currency:
+ *                 type: string
+ *                 default: USD
+ *               billing_interval:
+ *                 type: string
+ *                 enum: [biweekly, monthly, yearly]
+ *                 default: biweekly
+ *               is_active:
+ *                 type: boolean
+ *                 default: true
+ *     responses:
+ *       201:
+ *         description: Plan creado exitosamente
+ *       400:
+ *         description: Datos inválidos
+ */
+router.post('/plans', adminAuth, adminController.createPlan);
+
+/**
+ * @swagger
+ * /api/admin/plans/{id}:
+ *   put:
+ *     tags: [Admin]
+ *     summary: Actualizar un plan
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               billing_interval:
+ *                 type: string
+ *               is_active:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Plan actualizado
+ *       404:
+ *         description: Plan no encontrado
+ */
+router.put('/plans/:id', adminAuth, adminController.updatePlan);
+
+/**
+ * @swagger
+ * /api/admin/plans/{id}:
+ *   delete:
+ *     tags: [Admin]
+ *     summary: Eliminar un plan
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Plan eliminado
+ *       400:
+ *         description: No se puede eliminar, tiene suscripciones activas
+ *       404:
+ *         description: Plan no encontrado
+ */
+router.delete('/plans/:id', adminAuth, adminController.deletePlan);
 
 // ──────────────────────────────────────────────────────
 // USUARIOS
@@ -66,7 +235,7 @@ router.get('/stats', adminAuth, adminController.getStats);
  *   post:
  *     tags: [Admin]
  *     summary: Crear un nuevo usuario cliente
- *     description: Crea un usuario, asigna suscripción, crea cliente en Stripe y envía correo con link de pago
+ *     description: Crea usuario, suscripción, customer en Stripe y envía correo con link de pago
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -110,19 +279,12 @@ router.get('/stats', adminAuth, adminController.getStats);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Usuario creado exitosamente
  *                 userId:
  *                   type: integer
- *                   example: 10
  *                 checkoutUrl:
  *                   type: string
- *                   example: https://checkout.stripe.com/c/pay/cs_test_xxx
  *       400:
  *         description: Datos inválidos o faltantes
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.post('/users', adminAuth, adminController.createUser);
 
@@ -132,7 +294,7 @@ router.post('/users', adminAuth, adminController.createUser);
  *   get:
  *     tags: [Admin]
  *     summary: Obtener listado de usuarios
- *     description: Retorna lista paginada de usuarios con filtros opcionales
+ *     description: Retorna lista paginada de usuarios con filtros
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -141,13 +303,11 @@ router.post('/users', adminAuth, adminController.createUser);
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Número de página
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Usuarios por página
  *       - in: query
  *         name: search
  *         schema:
@@ -158,13 +318,11 @@ router.post('/users', adminAuth, adminController.createUser);
  *         schema:
  *           type: string
  *           enum: [active, inactive]
- *         description: Filtrar por estado del usuario
  *       - in: query
  *         name: subscription_status
  *         schema:
  *           type: string
  *           enum: [active, past_due, cancelled, expired, trialing]
- *         description: Filtrar por estado de suscripción
  *     responses:
  *       200:
  *         description: Lista paginada de usuarios
@@ -179,17 +337,10 @@ router.post('/users', adminAuth, adminController.createUser);
  *                     $ref: '#/components/schemas/AdminUser'
  *                 total:
  *                   type: integer
- *                   example: 150
  *                 page:
  *                   type: integer
- *                   example: 1
  *                 totalPages:
  *                   type: integer
- *                   example: 15
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.get('/users', adminAuth, adminController.getUsers);
 
@@ -199,7 +350,6 @@ router.get('/users', adminAuth, adminController.getUsers);
  *   get:
  *     tags: [Admin]
  *     summary: Obtener detalle de un usuario
- *     description: Retorna datos del usuario, su suscripción y últimas transacciones
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -208,45 +358,11 @@ router.get('/users', adminAuth, adminController.getUsers);
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID del usuario
  *     responses:
  *       200:
- *         description: Detalle del usuario
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: integer
- *                 full_name:
- *                   type: string
- *                 email:
- *                   type: string
- *                 role:
- *                   type: string
- *                 is_active:
- *                   type: boolean
- *                 subscription_id:
- *                   type: integer
- *                 plan_name:
- *                   type: string
- *                 price:
- *                   type: number
- *                 sub_status:
- *                   type: string
- *                 card_brand:
- *                   type: string
- *                 card_last4:
- *                   type: string
- *                 transactions:
- *                   type: array
- *                   items:
- *                     type: object
+ *         description: Detalle del usuario con suscripción y transacciones
  *       404:
  *         description: Usuario no encontrado
- *       401:
- *         description: No autorizado
  */
 router.get('/users/:id', adminAuth, adminController.getUserById);
 
@@ -255,8 +371,7 @@ router.get('/users/:id', adminAuth, adminController.getUserById);
  * /api/admin/users/{id}:
  *   patch:
  *     tags: [Admin]
- *     summary: Actualizar estado de un usuario
- *     description: Activar o desactivar un usuario (is_active)
+ *     summary: Activar/desactivar usuario
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -265,7 +380,6 @@ router.get('/users/:id', adminAuth, adminController.getUserById);
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID del usuario
  *     requestBody:
  *       required: true
  *       content:
@@ -278,19 +392,7 @@ router.get('/users/:id', adminAuth, adminController.getUserById);
  *                 example: false
  *     responses:
  *       200:
- *         description: Usuario actualizado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Usuario actualizado exitosamente
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
+ *         description: Usuario actualizado
  */
 router.patch('/users/:id', adminAuth, adminController.updateUser);
 
@@ -304,7 +406,6 @@ router.patch('/users/:id', adminAuth, adminController.updateUser);
  *   get:
  *     tags: [Admin]
  *     summary: Obtener listado de suscripciones
- *     description: Retorna lista paginada de suscripciones con filtro por estado
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -313,19 +414,16 @@ router.patch('/users/:id', adminAuth, adminController.updateUser);
  *         schema:
  *           type: string
  *           enum: [active, past_due, cancelled, expired, trialing]
- *         description: Filtrar por estado de suscripción
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Número de página
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Suscripciones por página
  *     responses:
  *       200:
  *         description: Lista paginada de suscripciones
@@ -344,10 +442,6 @@ router.patch('/users/:id', adminAuth, adminController.updateUser);
  *                   type: integer
  *                 totalPages:
  *                   type: integer
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.get('/subscriptions', adminAuth, adminController.getSubscriptions);
 
@@ -357,7 +451,6 @@ router.get('/subscriptions', adminAuth, adminController.getSubscriptions);
  *   patch:
  *     tags: [Admin]
  *     summary: Cancelar una suscripción
- *     description: Marca la suscripción como cancelada
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -366,22 +459,9 @@ router.get('/subscriptions', adminAuth, adminController.getSubscriptions);
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID de la suscripción
  *     responses:
  *       200:
  *         description: Suscripción cancelada exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Suscripción cancelada exitosamente
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.patch('/subscriptions/:id/cancel', adminAuth, adminController.cancelSubscription);
 
@@ -391,7 +471,6 @@ router.patch('/subscriptions/:id/cancel', adminAuth, adminController.cancelSubsc
  *   patch:
  *     tags: [Admin]
  *     summary: Reactivar una suscripción cancelada
- *     description: Vuelve a activar una suscripción previamente cancelada
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -400,22 +479,9 @@ router.patch('/subscriptions/:id/cancel', adminAuth, adminController.cancelSubsc
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID de la suscripción
  *     responses:
  *       200:
  *         description: Suscripción reactivada exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Suscripción reactivada exitosamente
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.patch('/subscriptions/:id/reactivate', adminAuth, adminController.reactivateSubscription);
 
@@ -429,7 +495,6 @@ router.patch('/subscriptions/:id/reactivate', adminAuth, adminController.reactiv
  *   get:
  *     tags: [Admin]
  *     summary: Obtener listado de transacciones
- *     description: Retorna lista paginada de transacciones con filtros
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -438,24 +503,20 @@ router.patch('/subscriptions/:id/reactivate', adminAuth, adminController.reactiv
  *         schema:
  *           type: string
  *           enum: [pending, succeeded, failed, refunded]
- *         description: Filtrar por estado de transacción
  *       - in: query
  *         name: user_id
  *         schema:
  *           type: integer
- *         description: Filtrar por ID de usuario
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Número de página
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Transacciones por página
  *     responses:
  *       200:
  *         description: Lista paginada de transacciones
@@ -474,10 +535,6 @@ router.patch('/subscriptions/:id/reactivate', adminAuth, adminController.reactiv
  *                   type: integer
  *                 totalPages:
  *                   type: integer
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.get('/transactions', adminAuth, adminController.getTransactions);
 
@@ -487,7 +544,6 @@ router.get('/transactions', adminAuth, adminController.getTransactions);
  *   post:
  *     tags: [Admin]
  *     summary: Reintentar un cobro fallido
- *     description: Reintenta el cobro de una transacción que falló
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -496,7 +552,6 @@ router.get('/transactions', adminAuth, adminController.getTransactions);
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID de la transacción a reintentar
  *     responses:
  *       200:
  *         description: Cobro reintentado
@@ -507,18 +562,12 @@ router.get('/transactions', adminAuth, adminController.getTransactions);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Cobro reintentado
  *                 status:
  *                   type: string
- *                   example: succeeded
  *       400:
  *         description: Usuario sin método de pago
  *       404:
  *         description: Transacción no encontrada
- *       401:
- *         description: No autorizado
- *       403:
- *         description: Prohibido - No tiene rol de administrador
  */
 router.post('/transactions/:id/retry', adminAuth, adminController.retryTransaction);
 

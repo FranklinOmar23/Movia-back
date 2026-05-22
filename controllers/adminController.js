@@ -99,19 +99,92 @@ exports.getStats = async (req, res) => {
   }
 };
 
+// ──────────────────── PLANES (ADMIN) ────────────────────
+exports.getPlans = async (req, res) => {
+  try {
+    const [plans] = await pool.query('SELECT * FROM subscription_plans ORDER BY price ASC');
+    res.json(plans);
+  } catch (error) {
+    console.error('❌ Error en getPlans:', error);
+    res.status(500).json({ error: 'Error al obtener planes' });
+  }
+};
+
+exports.createPlan = async (req, res) => {
+  try {
+    const { name, description, price, currency = 'USD', billing_interval = 'biweekly', is_active = true } = req.body;
+    if (!name || !price) {
+      return res.status(400).json({ error: 'Nombre y precio son requeridos' });
+    }
+    const [result] = await pool.query(
+      'INSERT INTO subscription_plans (name, description, price, currency, billing_interval, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, description, price, currency, billing_interval, is_active]
+    );
+    res.status(201).json({ message: 'Plan creado exitosamente', planId: result.insertId });
+  } catch (error) {
+    console.error('❌ Error en createPlan:', error);
+    res.status(500).json({ error: 'Error al crear plan' });
+  }
+};
+
+exports.updatePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, price, currency, billing_interval, is_active } = req.body;
+
+    const [existing] = await pool.query('SELECT id FROM subscription_plans WHERE id = ?', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Plan no encontrado' });
+
+    const updates = [];
+    const values = [];
+    if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+    if (description !== undefined) { updates.push('description = ?'); values.push(description); }
+    if (price !== undefined) { updates.push('price = ?'); values.push(price); }
+    if (currency !== undefined) { updates.push('currency = ?'); values.push(currency); }
+    if (billing_interval !== undefined) { updates.push('billing_interval = ?'); values.push(billing_interval); }
+    if (is_active !== undefined) { updates.push('is_active = ?'); values.push(is_active); }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+
+    values.push(id);
+    await pool.query(`UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`, values);
+    res.json({ message: 'Plan actualizado exitosamente' });
+  } catch (error) {
+    console.error('❌ Error en updatePlan:', error);
+    res.status(500).json({ error: 'Error al actualizar plan' });
+  }
+};
+
+exports.deletePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [existing] = await pool.query('SELECT id FROM subscription_plans WHERE id = ?', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Plan no encontrado' });
+
+    const [activeSubs] = await pool.query('SELECT COUNT(*) AS count FROM subscriptions WHERE plan_id = ? AND status = "active"', [id]);
+    if (activeSubs[0].count > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar, tiene suscripciones activas', activeSubscriptions: activeSubs[0].count });
+    }
+
+    await pool.query('DELETE FROM subscription_plans WHERE id = ?', [id]);
+    res.json({ message: 'Plan eliminado exitosamente' });
+  } catch (error) {
+    console.error('❌ Error en deletePlan:', error);
+    res.status(500).json({ error: 'Error al eliminar plan' });
+  }
+};
+
 // ──────────────────── USUARIOS ────────────────────
 exports.createUser = async (req, res) => {
   try {
     const { full_name, email, password, plan_id, period_end_date } = req.body;
 
     if (!full_name || !email || !password || !plan_id || !period_end_date) {
-      return res.status(400).json({ error: 'Faltan campos requeridos: full_name, email, password, plan_id, period_end_date' });
+      return res.status(400).json({ error: 'Faltan campos: full_name, email, password, plan_id, period_end_date' });
     }
 
     const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'El email ya está registrado' });
-    }
+    if (existing.length > 0) return res.status(400).json({ error: 'El email ya está registrado' });
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
@@ -145,7 +218,7 @@ exports.createUser = async (req, res) => {
       payment_method_types: ['card'],
       mode: 'setup',
       customer: customer.id,
-      success_url: process.env.SUCCESS_URL || 'https://tudominio.com/success?session_id={CHECKOUT_SESSION_ID}',
+      success_url: process.env.SUCCESS_URL || 'https://tudominio.com/success',
       cancel_url: process.env.CANCEL_URL || 'https://tudominio.com/cancel',
     });
 
@@ -155,12 +228,7 @@ exports.createUser = async (req, res) => {
       console.error('⚠️ Error enviando correo:', emailError.message);
     }
 
-    res.status(201).json({
-      message: 'Usuario creado exitosamente',
-      userId,
-      checkoutUrl: session.url
-    });
-
+    res.status(201).json({ message: 'Usuario creado exitosamente', userId, checkoutUrl: session.url });
   } catch (error) {
     console.error('❌ Error en createUser:', error);
     res.status(500).json({ error: 'Error al crear usuario: ' + error.message });
@@ -171,51 +239,30 @@ exports.getUsers = async (req, res) => {
   try {
     const { page = 1, limit = 10, search, status, subscription_status } = req.query;
     const offset = (page - 1) * limit;
-
     let where = "WHERE u.role = 'user'";
     const params = [];
 
-    if (search) {
-      where += " AND (u.full_name LIKE ? OR u.email LIKE ?)";
-      params.push(`%${search}%`, `%${search}%`);
-    }
-    if (status === 'active') {
-      where += " AND u.is_active = TRUE";
-    } else if (status === 'inactive') {
-      where += " AND u.is_active = FALSE";
-    }
-    if (subscription_status) {
-      where += " AND s.status = ?";
-      params.push(subscription_status);
-    }
+    if (search) { where += " AND (u.full_name LIKE ? OR u.email LIKE ?)"; params.push(`%${search}%`, `%${search}%`); }
+    if (status === 'active') { where += " AND u.is_active = TRUE"; }
+    else if (status === 'inactive') { where += " AND u.is_active = FALSE"; }
+    if (subscription_status) { where += " AND s.status = ?"; params.push(subscription_status); }
 
-    const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM users u LEFT JOIN subscriptions s ON u.id = s.user_id ${where}`,
-      params
-    );
+    const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM users u LEFT JOIN subscriptions s ON u.id = s.user_id ${where}`, params);
 
     const [users] = await pool.query(`
-      SELECT 
-        u.id, u.full_name, u.email, u.role, u.is_active, u.stripe_customer_id, u.created_at,
-        s.id AS subscription_id, s.status AS sub_status,
-        sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
-        s.current_period_start, s.current_period_end, s.cancel_at_period_end,
-        pm.id AS payment_method_id, pm.card_brand, pm.card_last4
+      SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.stripe_customer_id, u.created_at,
+             s.id AS subscription_id, s.status AS sub_status,
+             sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
+             s.current_period_start, s.current_period_end, s.cancel_at_period_end,
+             pm.id AS payment_method_id, pm.card_brand, pm.card_last4
       FROM users u
       LEFT JOIN subscriptions s ON u.id = s.user_id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
       LEFT JOIN payment_methods pm ON s.payment_method_id = pm.id
-      ${where}
-      ORDER BY u.created_at DESC
-      LIMIT ? OFFSET ?
+      ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?
     `, [...params, parseInt(limit), parseInt(offset)]);
 
-    res.json({
-      data: users,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
-    });
+    res.json({ data: users, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
   } catch (error) {
     console.error('❌ Error en getUsers:', error);
     res.status(500).json({ error: 'Error al obtener usuarios' });
@@ -225,14 +272,12 @@ exports.getUsers = async (req, res) => {
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
-
     const [users] = await pool.query(`
-      SELECT 
-        u.id, u.full_name, u.email, u.role, u.is_active, u.stripe_customer_id, u.created_at,
-        s.id AS subscription_id, s.status AS sub_status,
-        sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
-        s.current_period_start, s.current_period_end, s.cancel_at_period_end,
-        pm.id AS payment_method_id, pm.card_brand, pm.card_last4
+      SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.stripe_customer_id, u.created_at,
+             s.id AS subscription_id, s.status AS sub_status,
+             sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
+             s.current_period_start, s.current_period_end, s.cancel_at_period_end,
+             pm.id AS payment_method_id, pm.card_brand, pm.card_last4
       FROM users u
       LEFT JOIN subscriptions s ON u.id = s.user_id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
@@ -240,15 +285,9 @@ exports.getUserById = async (req, res) => {
       WHERE u.id = ?
     `, [id]);
 
-    if (users.length === 0) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
+    if (users.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    const [transactions] = await pool.query(
-      'SELECT * FROM payment_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 10',
-      [id]
-    );
-
+    const [transactions] = await pool.query('SELECT * FROM payment_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', [id]);
     res.json({ ...users[0], transactions });
   } catch (error) {
     console.error('❌ Error en getUserById:', error);
@@ -260,12 +299,10 @@ exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
     const { is_active } = req.body;
-
     if (typeof is_active !== 'undefined') {
       await pool.query('UPDATE users SET is_active = ? WHERE id = ?', [is_active, id]);
       return res.json({ message: 'Usuario actualizado exitosamente' });
     }
-
     res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
   } catch (error) {
     console.error('❌ Error en updateUser:', error);
@@ -278,42 +315,24 @@ exports.getSubscriptions = async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
-
     let where = '';
     const params = [];
+    if (status) { where = 'WHERE s.status = ?'; params.push(status); }
 
-    if (status) {
-      where = 'WHERE s.status = ?';
-      params.push(status);
-    }
-
-    const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM subscriptions s ${where}`,
-      params
-    );
+    const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM subscriptions s ${where}`, params);
 
     const [subscriptions] = await pool.query(`
-      SELECT 
-        s.id, s.user_id, s.plan_id, s.status, 
-        s.current_period_start, s.current_period_end, s.cancel_at_period_end, s.created_at,
-        u.full_name, u.email,
-        sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
-        pm.card_brand, pm.card_last4
+      SELECT s.id, s.user_id, s.plan_id, s.status, s.current_period_start, s.current_period_end, s.cancel_at_period_end, s.created_at,
+             u.full_name, u.email, sp.name AS plan_name, sp.price, sp.billing_interval AS plan_interval,
+             pm.card_brand, pm.card_last4
       FROM subscriptions s
       JOIN users u ON s.user_id = u.id
       JOIN subscription_plans sp ON s.plan_id = sp.id
       LEFT JOIN payment_methods pm ON s.payment_method_id = pm.id
-      ${where}
-      ORDER BY s.created_at DESC
-      LIMIT ? OFFSET ?
+      ${where} ORDER BY s.created_at DESC LIMIT ? OFFSET ?
     `, [...params, parseInt(limit), parseInt(offset)]);
 
-    res.json({
-      data: subscriptions,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
-    });
+    res.json({ data: subscriptions, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
   } catch (error) {
     console.error('❌ Error en getSubscriptions:', error);
     res.status(500).json({ error: 'Error al obtener suscripciones' });
@@ -322,11 +341,7 @@ exports.getSubscriptions = async (req, res) => {
 
 exports.cancelSubscription = async (req, res) => {
   try {
-    const { id } = req.params;
-    await pool.query(
-      "UPDATE subscriptions SET status = 'cancelled', cancel_at_period_end = TRUE, cancelled_at = NOW() WHERE id = ?",
-      [id]
-    );
+    await pool.query("UPDATE subscriptions SET status = 'cancelled', cancel_at_period_end = TRUE, cancelled_at = NOW() WHERE id = ?", [req.params.id]);
     res.json({ message: 'Suscripción cancelada exitosamente' });
   } catch (error) {
     console.error('❌ Error en cancelSubscription:', error);
@@ -336,11 +351,7 @@ exports.cancelSubscription = async (req, res) => {
 
 exports.reactivateSubscription = async (req, res) => {
   try {
-    const { id } = req.params;
-    await pool.query(
-      "UPDATE subscriptions SET status = 'active', cancel_at_period_end = FALSE, cancelled_at = NULL WHERE id = ?",
-      [id]
-    );
+    await pool.query("UPDATE subscriptions SET status = 'active', cancel_at_period_end = FALSE, cancelled_at = NULL WHERE id = ?", [req.params.id]);
     res.json({ message: 'Suscripción reactivada exitosamente' });
   } catch (error) {
     console.error('❌ Error en reactivateSubscription:', error);
@@ -353,41 +364,21 @@ exports.getTransactions = async (req, res) => {
   try {
     const { status, user_id, page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
-
     let where = '';
     const params = [];
+    if (status) { where = 'WHERE pt.status = ?'; params.push(status); }
+    if (user_id) { where = where ? where + ' AND pt.user_id = ?' : 'WHERE pt.user_id = ?'; params.push(user_id); }
 
-    if (status) {
-      where = 'WHERE pt.status = ?';
-      params.push(status);
-    }
-    if (user_id) {
-      where = where ? where + ' AND pt.user_id = ?' : 'WHERE pt.user_id = ?';
-      params.push(user_id);
-    }
-
-    const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM payment_transactions pt ${where}`,
-      params
-    );
+    const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM payment_transactions pt ${where}`, params);
 
     const [transactions] = await pool.query(`
-      SELECT 
-        pt.*,
-        u.full_name, u.email
+      SELECT pt.*, u.full_name, u.email
       FROM payment_transactions pt
       JOIN users u ON pt.user_id = u.id
-      ${where}
-      ORDER BY pt.created_at DESC
-      LIMIT ? OFFSET ?
+      ${where} ORDER BY pt.created_at DESC LIMIT ? OFFSET ?
     `, [...params, parseInt(limit), parseInt(offset)]);
 
-    res.json({
-      data: transactions,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
-    });
+    res.json({ data: transactions, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
   } catch (error) {
     console.error('❌ Error en getTransactions:', error);
     res.status(500).json({ error: 'Error al obtener transacciones' });
@@ -397,14 +388,10 @@ exports.getTransactions = async (req, res) => {
 exports.retryTransaction = async (req, res) => {
   try {
     const { id } = req.params;
-
     const [transactions] = await pool.query('SELECT * FROM payment_transactions WHERE id = ?', [id]);
-    if (transactions.length === 0) {
-      return res.status(404).json({ error: 'Transacción no encontrada' });
-    }
+    if (transactions.length === 0) return res.status(404).json({ error: 'Transacción no encontrada' });
 
     const transaction = transactions[0];
-
     const [users] = await pool.query(`
       SELECT u.stripe_customer_id, pm.processor_token
       FROM users u
@@ -417,7 +404,6 @@ exports.retryTransaction = async (req, res) => {
     }
 
     const user = users[0];
-
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(transaction.amount * 100),
       currency: transaction.currency.toLowerCase(),
@@ -427,10 +413,8 @@ exports.retryTransaction = async (req, res) => {
       confirm: true,
     });
 
-    await pool.query(
-      'UPDATE payment_transactions SET status = ?, processor_transaction_id = ? WHERE id = ?',
-      [paymentIntent.status, paymentIntent.id, id]
-    );
+    await pool.query('UPDATE payment_transactions SET status = ?, processor_transaction_id = ? WHERE id = ?',
+      [paymentIntent.status, paymentIntent.id, id]);
 
     res.json({ message: 'Cobro reintentado', status: paymentIntent.status });
   } catch (error) {

@@ -15,7 +15,7 @@ const auth = require('../middleware/auth');
  * /api/payments/create-checkout-session:
  *   post:
  *     tags: [Payments]
- *     summary: Crear sesión de pago para nueva tarjeta
+ *     summary: Crear sesión de pago para nueva tarjeta (Stripe)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -29,7 +29,7 @@ const auth = require('../middleware/auth');
  *                 type: integer
  *     responses:
  *       200:
- *         description: URL de checkout
+ *         description: URL de checkout de Stripe
  */
 router.post('/create-checkout-session', auth, paymentController.createCheckoutSession);
 
@@ -38,7 +38,7 @@ router.post('/create-checkout-session', auth, paymentController.createCheckoutSe
  * /api/payments/reactivate-subscription:
  *   post:
  *     tags: [Payments]
- *     summary: Reactivar suscripción (autopago si tiene tarjeta, o link para nueva)
+ *     summary: Reactivar suscripción (autopago con tarjeta o link para nueva)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -55,19 +55,6 @@ router.post('/create-checkout-session', auth, paymentController.createCheckoutSe
  *     responses:
  *       200:
  *         description: Resultado de la reactivación
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 autoCharged:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 url:
- *                   type: string
- *                 cardLast4:
- *                   type: string
  */
 router.post('/reactivate-subscription', auth, paymentController.reactivateSubscription);
 

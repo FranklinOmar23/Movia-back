@@ -23,7 +23,7 @@ exports.getContinueWatching = async (req, res) => {
         wh.last_watched
       FROM watch_history wh
       WHERE wh.user_id = ?
-      AND wh.progress_pct >= 5
+      AND wh.progress_pct >= 1
         AND wh.progress_pct < 95
       ORDER BY wh.last_watched DESC
       LIMIT ?

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
+const watchHistoryRoutes = require('./routes/watchHistory');
 require('dotenv').config();
 
 // Rutas
@@ -65,6 +66,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);     // Stripe
 app.use('/api/plans', plansRoutes);
 app.use('/api/paypal', paypalRoutes);        // PayPal ← NUEVA
+app.use('/api/watch-history', watchHistoryRoutes);
 
 // Iniciar el job diario de cobros
 startDailyJob();

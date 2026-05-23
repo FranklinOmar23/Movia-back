@@ -4,9 +4,6 @@ const PAYPAL_API = process.env.PAYPAL_MODE === 'live'
   ? 'https://api-m.paypal.com'
   : 'https://api-m.sandbox.paypal.com';
 
-/**
- * Obtener token de acceso de PayPal
- */
 async function getAccessToken() {
   const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_SECRET}`).toString('base64');
   
@@ -23,9 +20,6 @@ async function getAccessToken() {
   return response.data.access_token;
 }
 
-/**
- * Crear un producto en PayPal
- */
 async function createProduct(name, description) {
   const token = await getAccessToken();
   
@@ -48,13 +42,12 @@ async function createProduct(name, description) {
 }
 
 /**
- * Crear un plan de suscripción en PayPal
- * SIEMPRE en DOP (pesos dominicanos)
+ * Crear plan de facturación en PayPal
+ * PayPal solo soporta ciertas monedas. Usamos USD y convertimos.
  */
-async function createBillingPlan(productId, planName, price, interval) {
+async function createBillingPlan(productId, planName, priceDOP, interval) {
   const token = await getAccessToken();
   
-  // Mapear intervalo de MOVIA a PayPal
   const intervalMap = {
     'biweekly': { interval_unit: 'WEEK', interval_count: 2 },
     'monthly': { interval_unit: 'MONTH', interval_count: 1 },
@@ -63,53 +56,65 @@ async function createBillingPlan(productId, planName, price, interval) {
 
   const billingInterval = intervalMap[interval] || intervalMap['monthly'];
 
-  console.log(`🅿️ Creando plan PayPal: ${planName} - ${price} DOP (${interval})`);
+  // Convertir DOP a USD (tasa fija o variable)
+  const tasaDOP = 58; // 1 USD = 58 DOP
+  const priceUSD = (parseFloat(priceDOP) / tasaDOP).toFixed(2);
 
-  const response = await axios({
-    method: 'post',
-    url: `${PAYPAL_API}/v1/billing/plans`,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    data: {
-      product_id: productId,
-      name: planName,
-      description: `Plan ${planName} - RD$${price} pesos dominicanos`,
-      status: 'ACTIVE',
-      billing_cycles: [
-        {
-          frequency: {
-            interval_unit: billingInterval.interval_unit,
-            interval_count: billingInterval.interval_count
-          },
-          tenure_type: 'REGULAR',
-          sequence: 1,
-          total_cycles: 0,
-          pricing_scheme: {
-            fixed_price: {
-              value: price.toString(),        // ← 250.00
-              currency_code: 'DOP'             // ← PESOS DOMINICANOS
+  console.log(`🅿️ PAYPAL PLAN: ${planName}`);
+  console.log(`   Precio DOP: RD$${priceDOP} → USD: $${priceUSD}`);
+  console.log(`   Intervalo: ${interval}`);
+
+  try {
+    const response = await axios({
+      method: 'post',
+      url: `${PAYPAL_API}/v1/billing/plans`,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      data: {
+        product_id: productId,
+        name: `${planName} - $${priceUSD} USD`,
+        description: `Suscripción ${planName} - equivalente a RD$${priceDOP} DOP`,
+        status: 'ACTIVE',
+        billing_cycles: [
+          {
+            frequency: {
+              interval_unit: billingInterval.interval_unit,
+              interval_count: billingInterval.interval_count
+            },
+            tenure_type: 'REGULAR',
+            sequence: 1,
+            total_cycles: 0,
+            pricing_scheme: {
+              fixed_price: {
+                value: priceUSD,
+                currency_code: 'USD'     // PayPal requiere USD
+              }
             }
           }
+        ],
+        payment_preferences: {
+          auto_bill_outstanding: true,
+          setup_fee_failure_action: 'CONTINUE',
+          payment_failure_threshold: 3
         }
-      ],
-      payment_preferences: {
-        auto_bill_outstanding: true,
-        setup_fee_failure_action: 'CONTINUE',
-        payment_failure_threshold: 3
       }
-    }
-  });
+    });
 
-  console.log(`✅ Plan PayPal creado: ${response.data.id}`);
-  return response.data.id;
+    console.log(`✅ Plan PayPal creado: ${response.data.id}`);
+    return {
+      planId: response.data.id,
+      priceUSD: priceUSD,
+      priceDOP: priceDOP
+    };
+  } catch (error) {
+    console.error('❌ Error creando plan PayPal:', JSON.stringify(error.response?.data, null, 2));
+    throw error;
+  }
 }
 
-/**
- * Crear una suscripción en PayPal
- */
 async function createSubscription(paypalPlanId, subscriberEmail, subscriberName, returnUrl, cancelUrl) {
   const token = await getAccessToken();
   
@@ -154,9 +159,6 @@ async function createSubscription(paypalPlanId, subscriberEmail, subscriberName,
   };
 }
 
-/**
- * Cancelar suscripción en PayPal
- */
 async function cancelSubscription(paypalSubscriptionId) {
   const token = await getAccessToken();
   
@@ -173,9 +175,6 @@ async function cancelSubscription(paypalSubscriptionId) {
   });
 }
 
-/**
- * Verificar webhook de PayPal
- */
 async function verifyWebhook(headers, body) {
   const token = await getAccessToken();
   

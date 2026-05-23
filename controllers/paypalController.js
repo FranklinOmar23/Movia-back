@@ -116,6 +116,9 @@ exports.createPayPalSubscription = async (req, res) => {
  * POST /api/paypal/webhook
  */
 exports.paypalWebhook = async (req, res) => {
+    console.log('🔔 WEBHOOK RECIBIDO');
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
     try {
         // Verificar firma del webhook
         const isValid = await paypalService.verifyWebhook(req.headers, req.body);
@@ -138,71 +141,90 @@ exports.paypalWebhook = async (req, res) => {
         // ──────────────────────────────────────────────
         if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
             const paypalSubscriptionId = event.resource.id;
-            const subscriberEmail = event.resource.subscriber?.email_address;
             const planId = event.resource.plan_id;
+
+            // El email puede venir en distintos paths según la versión de PayPal
+            const subscriberEmail =
+                event.resource.subscriber?.email_address ||
+                event.resource.subscriber?.email ||
+                null;
 
             console.log(`🔔 Suscripción activada`);
             console.log(`   PayPal Sub ID: ${paypalSubscriptionId}`);
             console.log(`   Email: ${subscriberEmail}`);
             console.log(`   Plan ID: ${planId}`);
+            console.log(`   Resource completo:`, JSON.stringify(event.resource, null, 2)); // 👈 debug
 
-            // Buscar usuario por email
-            const [users] = await pool.query('SELECT id FROM users WHERE email = ?', [subscriberEmail]);
+            if (!subscriberEmail) {
+                console.error('❌ No se pudo extraer el email del evento');
+                return res.json({ received: true });
+            }
+
+            const [users] = await pool.query(
+                'SELECT id FROM users WHERE email = ?',
+                [subscriberEmail]
+            );
 
             if (users.length === 0) {
-                console.error(`❌ Usuario no encontrado para email: ${subscriberEmail}`);
+                console.error(`❌ Usuario no encontrado: ${subscriberEmail}`);
                 return res.json({ received: true });
             }
 
             const userId = users[0].id;
             const nextBillingDate = event.resource.billing_info?.next_billing_time;
-            const nextDate = nextBillingDate ? formatDate(new Date(nextBillingDate)) : addDays(new Date(), 14);
+            const nextDate = nextBillingDate
+                ? formatDate(new Date(nextBillingDate))
+                : addDays(new Date(), 30);
 
-            console.log(`   Usuario BD ID: ${userId}`);
-            console.log(`   Próximo cobro: ${nextDate}`);
-
-            // Buscar el plan_id de MOVIA por el paypal_plan_id
+            // Buscar plan MOVIA por paypal_plan_id
             const [moviaPlans] = await pool.query(
                 'SELECT id FROM subscription_plans WHERE paypal_plan_id = ?',
                 [planId]
             );
             const moviaPlanId = moviaPlans.length > 0 ? moviaPlans[0].id : 1;
 
-            // Verificar si ya tiene una suscripción activa
+            // Verificar si ya existe suscripción con este paypal_subscription_id
+            const [existingPaypal] = await pool.query(
+                'SELECT id FROM subscriptions WHERE paypal_subscription_id = ?',
+                [paypalSubscriptionId]
+            );
+
+            if (existingPaypal.length > 0) {
+                console.log(`⚠️ Suscripción PayPal ya registrada, omitiendo`);
+                return res.json({ received: true });
+            }
+
+            // Verificar si tiene suscripción activa previa
             const [existingSub] = await pool.query(
                 "SELECT id FROM subscriptions WHERE user_id = ? AND status = 'active'",
                 [userId]
             );
 
             if (existingSub.length > 0) {
-                // Actualizar suscripción existente
                 await pool.query(
                     `UPDATE subscriptions 
-           SET paypal_subscription_id = ?, 
-               plan_id = ?,
-               current_period_start = NOW(), 
-               current_period_end = ?,
-               status = 'active',
-               cancel_at_period_end = FALSE,
-               cancelled_at = NULL
-           WHERE id = ?`,
+             SET paypal_subscription_id = ?, 
+                 plan_id = ?,
+                 current_period_start = NOW(), 
+                 current_period_end = ?,
+                 status = 'active',
+                 cancel_at_period_end = FALSE,
+                 cancelled_at = NULL
+             WHERE id = ?`,
                     [paypalSubscriptionId, moviaPlanId, nextDate, existingSub[0].id]
                 );
-                console.log(`✅ Suscripción ${existingSub[0].id} actualizada`);
+                console.log(`✅ Suscripción ${existingSub[0].id} actualizada con PayPal ID`);
             } else {
-                // Crear nueva suscripción
                 const [newSub] = await pool.query(
                     `INSERT INTO subscriptions 
-           (user_id, plan_id, payment_method_id, paypal_subscription_id, status, current_period_start, current_period_end, cancel_at_period_end)
-           VALUES (?, ?, NULL, ?, 'active', NOW(), ?, FALSE)`,
+             (user_id, plan_id, payment_method_id, paypal_subscription_id, 
+              status, current_period_start, current_period_end, cancel_at_period_end)
+             VALUES (?, ?, NULL, ?, 'active', NOW(), ?, FALSE)`,
                     [userId, moviaPlanId, paypalSubscriptionId, nextDate]
                 );
-                console.log(`✅ Nueva suscripción ${newSub.insertId} creada`);
+                console.log(`✅ Nueva suscripción creada: ${newSub.insertId}`);
             }
-
-            console.log(`✅ Suscripción PayPal activada para usuario ${userId}`);
         }
-
         // ──────────────────────────────────────────────
         // EVENTO: PAGO COMPLETADO
         // ──────────────────────────────────────────────

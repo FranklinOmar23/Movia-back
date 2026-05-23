@@ -11,6 +11,7 @@ const adminRoutes = require('./routes/admin');
 const paymentRoutes = require('./routes/payments');    // Stripe
 const plansRoutes = require('./routes/plans');
 const paypalRoutes = require('./routes/paypal');       // PayPal ← NUEVA
+const watchlistRoutes = require('./routes/watchlist');
 
 // Job diario de cobros
 const { startDailyJob } = require('./jobs/dailyCharge');
@@ -67,6 +68,7 @@ app.use('/api/payments', paymentRoutes);     // Stripe
 app.use('/api/plans', plansRoutes);
 app.use('/api/paypal', paypalRoutes);        // PayPal ← NUEVA
 app.use('/api/watch-history', watchHistoryRoutes);
+app.use('/api/watchlist', watchlistRoutes);
 
 // Iniciar el job diario de cobros
 startDailyJob();

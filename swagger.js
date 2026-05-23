@@ -10,9 +10,9 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
-        description: 'Servidor local',
-      },
+        url: process.env.API_URL || 'http://localhost:3000',
+        description: process.env.NODE_ENV === 'production' ? 'Producción' : 'Local'
+      }
     ],
     components: {
       securitySchemes: {

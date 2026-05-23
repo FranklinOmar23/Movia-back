@@ -97,6 +97,38 @@ exports.saveProgress = async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos: tmdbId, mediaType, progressPct, progressSeconds' });
     }
 
+    // ─── Convertir genreIds a JSON válido ───
+    let genreIdsJson = null;
+    if (genreIds) {
+      try {
+        // Si ya es un string JSON (empieza con '[')
+        if (typeof genreIds === 'string' && genreIds.trim().startsWith('[')) {
+          genreIdsJson = genreIds;
+        }
+        // Si es string separado por comas: "28,80,53"
+        else if (typeof genreIds === 'string' && genreIds.includes(',')) {
+          const idsArray = genreIds.split(',').map(id => parseInt(id.trim(), 10));
+          genreIdsJson = JSON.stringify(idsArray);
+        }
+        // Si es un solo número como string: "28"
+        else if (typeof genreIds === 'string') {
+          genreIdsJson = JSON.stringify([parseInt(genreIds, 10)]);
+        }
+        // Si ya es un array
+        else if (Array.isArray(genreIds)) {
+          genreIdsJson = JSON.stringify(genreIds);
+        }
+      } catch (e) {
+        console.error('⚠️ Error convirtiendo genreIds:', e.message);
+        genreIdsJson = null;
+      }
+    }
+
+    console.log(`📝 Guardando progreso para usuario ${userId}:`);
+    console.log(`   tmdbId: ${tmdbId}, mediaType: ${mediaType}`);
+    console.log(`   progress: ${progressPct}% (${progressSeconds}s)`);
+    console.log(`   genreIds original: ${genreIds} → JSON: ${genreIdsJson}`);
+
     // Verificar si ya existe
     const [existing] = await pool.query(
       'SELECT id FROM watch_history WHERE user_id = ? AND tmdb_id = ? AND media_type = ?',
@@ -104,7 +136,7 @@ exports.saveProgress = async (req, res) => {
     );
 
     if (existing.length > 0) {
-      // Actualizar
+      // Actualizar registro existente
       await pool.query(`
         UPDATE watch_history 
         SET progress_pct = ?,
@@ -125,12 +157,13 @@ exports.saveProgress = async (req, res) => {
         durationSeconds,
         title,
         posterPath,
-        genreIds,
+        genreIdsJson,
         existing[0].id
       ]);
+      console.log(`   ✅ Registro actualizado (id: ${existing[0].id})`);
     } else {
-      // Insertar nuevo
-      await pool.query(`
+      // Insertar nuevo registro
+      const [result] = await pool.query(`
         INSERT INTO watch_history 
         (user_id, tmdb_id, media_type, progress_pct, progress_seconds, season, episode, duration_seconds, title, poster_path, genre_ids)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -145,8 +178,9 @@ exports.saveProgress = async (req, res) => {
         durationSeconds,
         title,
         posterPath,
-        genreIds
+        genreIdsJson
       ]);
+      console.log(`   ✅ Nuevo registro creado (id: ${result.insertId})`);
     }
 
     res.json({ message: 'Progreso guardado exitosamente' });

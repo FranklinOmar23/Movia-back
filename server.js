@@ -8,9 +8,9 @@ require('dotenv').config();
 // Rutas
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
-const paymentRoutes = require('./routes/payments');    // Stripe
+const paymentRoutes = require('./routes/payments');
 const plansRoutes = require('./routes/plans');
-const paypalRoutes = require('./routes/paypal');       // PayPal ← NUEVA
+const paypalRoutes = require('./routes/paypal');
 const watchlistRoutes = require('./routes/watchlist');
 
 // Job diario de cobros
@@ -18,11 +18,8 @@ const { startDailyJob } = require('./jobs/dailyCharge');
 
 const app = express();
 
-// IMPORTANTE: El webhook de Stripe necesita el body sin parsear (raw)
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-
 // ──────────────────────────────────────────────────────
-// CONFIGURACIÓN CORS
+// CONFIGURACIÓN CORS — PRIMERO QUE TODO
 // ──────────────────────────────────────────────────────
 const allowedOrigins = [
   'http://localhost:3000',
@@ -33,7 +30,7 @@ const allowedOrigins = [
   'https://movia.arcodedominicana.com',
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -44,8 +41,16 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('/{*splat}', cors(corsOptions));// Responde todos los preflight
+
+// ──────────────────────────────────────────────────────
+// WEBHOOK DE STRIPE — body raw, debe ir ANTES de express.json()
+// ──────────────────────────────────────────────────────
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
 // Middlewares globales
 app.use(express.json());
@@ -55,18 +60,18 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Health check
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'MOVIA API funcionando 🎬',
-    docs: '/api-docs'
+    docs: '/api-docs',
   });
 });
 
 // Montar rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/payments', paymentRoutes);     // Stripe
+app.use('/api/payments', paymentRoutes);
 app.use('/api/plans', plansRoutes);
-app.use('/api/paypal', paypalRoutes);        // PayPal ← NUEVA
+app.use('/api/paypal', paypalRoutes);
 app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 

@@ -116,9 +116,8 @@ exports.createPayPalSubscription = async (req, res) => {
  * POST /api/paypal/webhook
  */
 exports.paypalWebhook = async (req, res) => {
-    console.log('🔔 WEBHOOK RECIBIDO');
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('🔔 WEBHOOK RECIBIDO - evento:', req.body?.event_type);
+    console.log('🔔 Email del subscriber:', req.body?.resource?.subscriber?.email_address);
     try {
         // Verificar firma del webhook
         const isValid = await paypalService.verifyWebhook(req.headers, req.body);

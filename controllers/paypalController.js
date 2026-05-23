@@ -119,7 +119,7 @@ exports.paypalWebhook = async (req, res) => {
     console.log('🔔 WEBHOOK RECIBIDO - evento:', req.body?.event_type);
     console.log('🔔 Email del subscriber:', req.body?.resource?.subscriber?.email_address);
     try {
-        // Verificar firma del webhook
+        // Verificar firma del webhookwebhook
         const isValid = await paypalService.verifyWebhook(req.headers, req.body);
 
         if (!isValid) {

@@ -20,7 +20,7 @@ const adminController = require('../controllers/adminController');
  *   get:
  *     tags: [Admin]
  *     summary: Obtener estadísticas del dashboard
- *     description: Retorna totalUsers, activeUsers, activeSubscriptions, mrr, ingresos, pagos, tasa de crecimiento
+ *     description: Retorna KPIs globales + series históricas para gráficos (MRR, registros, distribución de suscripciones)
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -33,45 +33,57 @@ const adminController = require('../controllers/adminController');
  *               properties:
  *                 totalUsers:
  *                   type: integer
- *                   example: 150
+ *                   example: 1250
  *                 activeUsers:
  *                   type: integer
- *                   example: 120
- *                 newUsersThisMonth:
- *                   type: integer
- *                   example: 15
+ *                   example: 980
  *                 activeSubscriptions:
  *                   type: integer
- *                   example: 100
- *                 usersUpToDate:
- *                   type: integer
- *                   example: 85
- *                 usersOverdue:
- *                   type: integer
- *                   example: 15
+ *                   example: 340
  *                 mrr:
  *                   type: number
- *                   example: 799.00
- *                 currentMonthRevenue:
- *                   type: number
- *                   example: 1250.50
- *                 lastMonthRevenue:
- *                   type: number
- *                   example: 1100.00
- *                 growthRate:
- *                   type: number
- *                   example: 13.68
+ *                   example: 2500.00
  *                 pendingPayments:
  *                   type: integer
- *                   example: 5
+ *                   example: 12
  *                 failedPayments:
  *                   type: integer
- *                   example: 3
- *                 successfulPayments:
- *                   type: integer
- *                   example: 45
+ *                   example: 4
+ *                 mrrHistory:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       value:
+ *                         type: number
+ *                         example: 1800
+ *                 userRegistrations:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       count:
+ *                         type: integer
+ *                         example: 120
+ *                 subscriptionDistribution:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Activas
+ *                       value:
+ *                         type: integer
+ *                         example: 340
  *       401:
- *         description: No autorizado - Token inválido o no proporcionado
+ *         description: No autorizado
  *       403:
  *         description: Prohibido - No tiene rol de administrador
  */
@@ -226,8 +238,54 @@ router.put('/plans/:id', adminAuth, adminController.updatePlan);
 router.delete('/plans/:id', adminAuth, adminController.deletePlan);
 
 // ──────────────────────────────────────────────────────
-// USUARIOS
+// USUARIOS — stats ANTES que /:id para evitar conflicto
 // ──────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/admin/users/stats:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Estadísticas de usuarios
+ *     description: Registros mensuales de los últimos 6 meses y distribución de usuarios por plan
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estadísticas de usuarios
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 registrations:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       count:
+ *                         type: integer
+ *                         example: 120
+ *                 planDistribution:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Básico
+ *                       value:
+ *                         type: integer
+ *                         example: 450
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Prohibido - No tiene rol de administrador
+ */
+router.get('/users/stats', adminAuth, adminController.getUserStats); // ✅ ANTES de /users/:id
 
 /**
  * @swagger
@@ -364,7 +422,7 @@ router.get('/users', adminAuth, adminController.getUsers);
  *       404:
  *         description: Usuario no encontrado
  */
-router.get('/users/:id', adminAuth, adminController.getUserById);
+router.get('/users/:id', adminAuth, adminController.getUserById); // ✅ DESPUÉS de /users/stats
 
 /**
  * @swagger
@@ -397,8 +455,57 @@ router.get('/users/:id', adminAuth, adminController.getUserById);
 router.patch('/users/:id', adminAuth, adminController.updateUser);
 
 // ──────────────────────────────────────────────────────
-// SUSCRIPCIONES
+// SUSCRIPCIONES — stats ANTES que /:id
 // ──────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/admin/subscriptions/stats:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Estadísticas de suscripciones
+ *     description: Distribución por estado y comparativa mensual de activas vs canceladas (últimos 6 meses)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estadísticas de suscripciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 statusDistribution:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Activas
+ *                       value:
+ *                         type: integer
+ *                         example: 340
+ *                 monthlyComparison:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       active:
+ *                         type: integer
+ *                         example: 280
+ *                       cancelled:
+ *                         type: integer
+ *                         example: 20
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Prohibido - No tiene rol de administrador
+ */
+router.get('/subscriptions/stats', adminAuth, adminController.getSubscriptionStats); // ✅ ANTES de /:id
 
 /**
  * @swagger
@@ -486,8 +593,57 @@ router.patch('/subscriptions/:id/cancel', adminAuth, adminController.cancelSubsc
 router.patch('/subscriptions/:id/reactivate', adminAuth, adminController.reactivateSubscription);
 
 // ──────────────────────────────────────────────────────
-// TRANSACCIONES
+// TRANSACCIONES — stats ANTES que /:id
 // ──────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/admin/transactions/stats:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Estadísticas de transacciones
+ *     description: Volumen mensual total y comparativa de transacciones exitosas vs fallidas (últimos 6 meses)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estadísticas de transacciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 volumeHistory:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       count:
+ *                         type: integer
+ *                         example: 450
+ *                 successFailure:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       label:
+ *                         type: string
+ *                         example: Ene
+ *                       succeeded:
+ *                         type: integer
+ *                         example: 420
+ *                       failed:
+ *                         type: integer
+ *                         example: 30
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Prohibido - No tiene rol de administrador
+ */
+router.get('/transactions/stats', adminAuth, adminController.getTransactionStats); // ✅ ANTES de /:id
 
 /**
  * @swagger

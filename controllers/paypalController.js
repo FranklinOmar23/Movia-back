@@ -199,8 +199,7 @@ exports.paypalWebhook = async (req, res) => {
         i// En el webhook, cuando se activa la suscripción o se completa el pago
 if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
     const paypalSubscriptionId = event.resource.id;
-    
-    // Actualizar suscripción a ACTIVE
+
     await pool.query(
         `UPDATE subscriptions 
          SET status = 'active', 
@@ -209,8 +208,7 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
          WHERE paypal_subscription_id = ?`,
         [paypalSubscriptionId]
     );
-    
-    // Obtener datos del usuario
+
     const [subscriptions] = await pool.query(
         `SELECT s.*, u.email, u.full_name, p.name as plan_name, p.price 
          FROM subscriptions s
@@ -219,11 +217,17 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
          WHERE s.paypal_subscription_id = ?`,
         [paypalSubscriptionId]
     );
-    
+
     if (subscriptions.length > 0) {
         const sub = subscriptions[0];
-        
-        // 📧 ENVIAR CORREO DE ÉXITO
+
+        // 👇 ACTIVAR EL USUARIO
+        await pool.query(
+            'UPDATE users SET is_active = 1, updated_at = NOW() WHERE id = ?',
+            [sub.user_id]
+        );
+        console.log(`✅ Usuario ${sub.user_id} activado tras el pago`);
+
         try {
             await emailService.sendPaymentSuccessEmail(
                 sub.email,
@@ -232,7 +236,6 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
                 sub.price,
                 sub.current_period_end
             );
-            console.log(`📧 Correo de éxito enviado a ${sub.email}`);
         } catch (emailError) {
             console.error('❌ Error enviando correo de éxito:', emailError.message);
         }

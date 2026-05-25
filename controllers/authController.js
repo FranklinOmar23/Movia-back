@@ -91,7 +91,7 @@ exports.register = async (req, res) => {
     const [result] = await pool.query(
       `INSERT INTO users 
        (full_name, email, password_hash, role, is_active, created_at, updated_at) 
-       VALUES (?, ?, ?, ?, 1, NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, 0, NOW(), NOW())`,
       [full_name.trim(), email.toLowerCase(), password_hash, role]
     );
     

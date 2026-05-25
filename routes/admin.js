@@ -727,4 +727,121 @@ router.get('/transactions', adminAuth, adminController.getTransactions);
  */
 router.post('/transactions/:id/retry', adminAuth, adminController.retryTransaction);
 
+/**
+ * @swagger
+ * /api/admin/users/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Actualizar datos de un usuario
+ *     description: Permite al administrador actualizar uno o varios campos de un usuario. Todos los campos son opcionales.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del usuario a actualizar
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *                 description: Nombre completo del usuario
+ *                 example: Juan Pérez
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Correo electrónico del usuario
+ *                 example: juan.perez@example.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 description: Nueva contraseña (mínimo 6 caracteres)
+ *                 example: NuevaPassword123
+ *               role:
+ *                 type: string
+ *                 enum: [user, admin]
+ *                 description: Rol del usuario
+ *                 example: user
+ *               is_active:
+ *                 type: boolean
+ *                 description: Estado activo/inactivo del usuario
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Usuario actualizado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Usuario actualizado exitosamente
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     full_name:
+ *                       type: string
+ *                       example: Juan Pérez
+ *                     email:
+ *                       type: string
+ *                       example: juan.perez@example.com
+ *                     role:
+ *                       type: string
+ *                       example: user
+ *                     is_active:
+ *                       type: boolean
+ *                       example: true
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                     updated_at:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Datos inválidos o sin campos para actualizar
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: La contraseña debe tener al menos 6 caracteres
+ *       404:
+ *         description: Usuario no encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Usuario no encontrado
+ *       409:
+ *         description: El email ya está en uso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: El email ya está en uso
+ *       500:
+ *         description: Error del servidor
+ */
+router.patch('/users/:id', adminAuth, adminController.updateUser);
+
 module.exports = router;

@@ -430,6 +430,62 @@ exports.getUsers = async (req, res) => {
   }
 };
 
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { full_name, email, password, role, is_active } = req.body;
+
+    // Verificar que el usuario existe
+    const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const updates = [];
+    const values  = [];
+
+    if (full_name  !== undefined) { updates.push('full_name = ?');      values.push(full_name.trim()); }
+    if (email      !== undefined) { updates.push('email = ?');          values.push(email.toLowerCase()); }
+    if (role       !== undefined) { updates.push('role = ?');           values.push(role); }
+    if (is_active  !== undefined) { updates.push('is_active = ?');      values.push(is_active); }
+    if (password   !== undefined) {
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      }
+      const password_hash = await bcrypt.hash(password, 10);
+      updates.push('password_hash = ?');
+      values.push(password_hash);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+    }
+
+    updates.push('updated_at = NOW()');
+    values.push(id);
+
+    await pool.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    // Devolver el usuario actualizado
+    const [updatedUser] = await pool.query(
+      'SELECT id, full_name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?',
+      [id]
+    );
+
+    res.json({ message: 'Usuario actualizado exitosamente', user: updatedUser[0] });
+  } catch (error) {
+    console.error('❌ Error en updateUser:', error);
+    // Manejar email duplicado
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'El email ya está en uso' });
+    }
+    res.status(500).json({ error: 'Error al actualizar usuario' });
+  }
+};
+
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;

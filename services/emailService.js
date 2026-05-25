@@ -361,58 +361,79 @@ async function sendPaymentSetupEmail(email, username, subscriptionName, price, n
   `;
   return sendEmail({ to: email, subject: 'Completa tu registro de pago - MOVIA', html });
 }
-async function sendWelcomeEmail(email, username) {
-  const subject = '🎉 ¡Bienvenido a MOVIA!';
+async function sendWelcomeEmail(email, username, paymentLink, planName, price, currency) {
+  const subject = '🎬 ¡Bienvenido a MOVIA! Activa tu suscripción';
   
   const html = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Bienvenido a MOVIA</title>
       <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; padding: 30px 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px 10px 0 0; }
+        .header { text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px 10px 0 0; }
         .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-        .btn { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 20px 0; }
-        .features { margin: 20px 0; padding: 0; list-style: none; }
-        .features li { margin: 10px 0; padding-left: 25px; position: relative; }
-        .features li:before { content: "✓"; color: #667eea; font-weight: bold; position: absolute; left: 0; }
-        .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
-        hr { margin: 20px 0; border: none; border-top: 1px solid #ddd; }
+        .plan-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .price { font-size: 24px; font-weight: bold; color: #667eea; }
+        .btn { 
+          display: inline-block; 
+          background: #0070ba; 
+          color: white !important; 
+          padding: 14px 40px; 
+          text-decoration: none; 
+          border-radius: 25px; 
+          font-weight: bold;
+          font-size: 16px;
+          margin: 20px 0;
+        }
+        .steps { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .step { display: flex; margin: 10px 0; align-items: center; }
+        .link-box { word-break: break-all; color: #0070ba; font-size: 12px; margin-top: 20px; padding: 10px; background: #eee; border-radius: 5px; }
+        .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
           <h1>🎬 MOVIA</h1>
-          <p>Tu plataforma de streaming favorita</p>
+          <p>¡Tu cuenta está lista!</p>
         </div>
         <div class="content">
-          <h2>¡Hola ${username}!</h2>
-          <p>¡Bienvenido a MOVIA! Nos alegra mucho que te hayas unido a nuestra comunidad.</p>
-          <p>Con MOVIA podrás disfrutar de:</p>
-          <ul class="features">
-            <li>Acceso ilimitado a todo nuestro contenido</li>
-            <li>Calidad HD y 4K en todos los dispositivos</li>
-            <li>Sin publicidad molesta</li>
-            <li>Descargas para ver offline</li>
-            <li>Múltiples perfiles para toda la familia</li>
-          </ul>
-          <div style="text-align: center;">
-            <a href="${process.env.FRONTEND_URL || 'https://movia.arcodedominicana.com'}/plans" class="btn">🎬 Ver Planes de Suscripción</a>
+          <h2>¡Bienvenido ${username}! 🎉</h2>
+          
+          <p>Tu cuenta en MOVIA ha sido creada exitosamente. Solo falta un paso para comenzar a disfrutar de todo nuestro contenido: <strong>completar tu pago</strong>.</p>
+
+          <div class="plan-box">
+            <h3>📋 Tu plan seleccionado:</h3>
+            <p><strong>Plan:</strong> ${planName}</p>
+            <p><strong>Precio:</strong> <span class="price">${price} ${currency}</span> / mes</p>
+            <p><strong>Beneficios:</strong> Acceso ilimitado, sin publicidad, calidad HD.</p>
           </div>
-          <p>Para comenzar a disfrutar, selecciona un plan de suscripción y completa el proceso de pago.</p>
-          <hr>
-          <p style="font-size: 12px; color: #666;">
-            ¿Tienes preguntas? Contáctanos a movia@arcodedominicana.com<br>
-            © 2024 MOVIA - Todos los derechos reservados
-          </p>
+
+          <div class="steps">
+            <h3>¿Cómo activar tu cuenta?</h3>
+            <p>1️⃣ Haz clic en el botón de pago</p>
+            <p>2️⃣ Completa el pago con PayPal</p>
+            <p>3️⃣ Tu cuenta se activa automáticamente ✅</p>
+          </div>
+
+          <div style="text-align: center;">
+            <a href="${paymentLink}" class="btn">💰 Pagar y activar mi cuenta</a>
+          </div>
+
+          <div class="link-box">
+            <strong>🔗 Si el botón no funciona, copia este enlace:</strong><br>
+            <a href="${paymentLink}">${paymentLink}</a>
+          </div>
+
+          <p><strong>⚠️ Importante:</strong> El enlace expira en 24 horas. Si no completas el pago, tu cuenta permanecerá inactiva.</p>
+
+          <p style="font-size: 12px; color: #666;">¿Problemas? Escríbenos a <a href="mailto:movia@arcodedominicana.com">movia@arcodedominicana.com</a></p>
         </div>
         <div class="footer">
-          <p>Este es un correo automático, por favor no responder a este mensaje.</p>
+          <p>© 2024 MOVIA - Todos los derechos reservados</p>
+          <p>Este es un correo automático, por favor no responder.</p>
         </div>
       </div>
     </body>

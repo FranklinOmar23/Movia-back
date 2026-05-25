@@ -42,7 +42,7 @@ exports.createPayPalSubscription = async (req, res) => {
         );
 
         if (existingActive.length > 0) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'Ya tienes una suscripción pendiente o activa',
                 subscriptionId: existingActive[0].id
             });
@@ -69,7 +69,7 @@ exports.createPayPalSubscription = async (req, res) => {
         // Crear suscripción en PayPal
         const baseUrl = process.env.APP_URL || 'https://maroon-goshawk-691607.hostingersite.com';
         const frontendUrl = process.env.FRONTEND_URL || 'https://tu-frontend.com';
-        
+
         const result = await paypalService.createSubscription(
             paypalPlanId,
             user.email,
@@ -96,21 +96,20 @@ exports.createPayPalSubscription = async (req, res) => {
         );
 
         console.log(`✅ Suscripción pendiente creada en BD: ${newSubscription.insertId}`);
-        
-        // 🔑 ENVIAR CORREO CON LINK DE PAGO
+
+        // DESPUÉS (poner esto en su lugar):
         try {
-            await emailService.sendPaymentLinkEmail(
+            await emailService.sendWelcomeEmail(
                 user.email,
                 user.full_name,
-                result.approveUrl,
+                result.approveUrl,  // 👈 link de pago
                 plan.name,
                 plan.price,
                 plan.currency
             );
-            console.log(`📧 Link de pago enviado a ${user.email}`);
+            console.log(`📧 Bienvenida con link de pago enviada a ${user.email}`);
         } catch (emailError) {
-            console.error('❌ Error enviando link de pago:', emailError.message);
-            // No fallamos la creación, pero registramos el error
+            console.error('❌ Error enviando correo:', emailError.message);
         }
 
         res.json({
@@ -139,11 +138,11 @@ exports.createPayPalSubscription = async (req, res) => {
  */
 exports.paypalWebhook = async (req, res) => {
     console.log('🔔 WEBHOOK RECIBIDO');
-    
+
     try {
         // Para desarrollo, desactivar verificación temporalmente
         let isValid = true;
-        
+
         if (process.env.NODE_ENV === 'production') {
             isValid = await paypalService.verifyWebhook(req.headers, req.body);
             if (!isValid) {
@@ -164,21 +163,21 @@ exports.paypalWebhook = async (req, res) => {
         // ──────────────────────────────────────────────
         if (eventType === 'BILLING.SUBSCRIPTION.APPROVED') {
             const paypalSubscriptionId = event.resource.id;
-            
+
             console.log(`✅ Suscripción aprobada por el usuario: ${paypalSubscriptionId}`);
-            
+
             // Buscar la suscripción pendiente en BD
             const [subscriptions] = await pool.query(
                 `SELECT id, user_id, plan_id FROM subscriptions 
                  WHERE paypal_subscription_id = ? AND status = 'pending'`,
                 [paypalSubscriptionId]
             );
-            
+
             if (subscriptions.length > 0) {
                 // Actualizar estado a 'active'
                 const newEndDate = new Date();
                 newEndDate.setDate(newEndDate.getDate() + 30);
-                
+
                 await pool.query(
                     `UPDATE subscriptions 
                      SET status = 'active',
@@ -197,51 +196,51 @@ exports.paypalWebhook = async (req, res) => {
         // EVENTO: SUSCRIPCIÓN ACTIVADA
         // ──────────────────────────────────────────────
         i// En el webhook, cuando se activa la suscripción o se completa el pago
-if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
-    const paypalSubscriptionId = event.resource.id;
+        if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
+            const paypalSubscriptionId = event.resource.id;
 
-    await pool.query(
-        `UPDATE subscriptions 
+            await pool.query(
+                `UPDATE subscriptions 
          SET status = 'active', 
              current_period_start = NOW(),
              current_period_end = DATE_ADD(NOW(), INTERVAL 30 DAY)
          WHERE paypal_subscription_id = ?`,
-        [paypalSubscriptionId]
-    );
+                [paypalSubscriptionId]
+            );
 
-    const [subscriptions] = await pool.query(
-        `SELECT s.*, u.email, u.full_name, p.name as plan_name, p.price 
+            const [subscriptions] = await pool.query(
+                `SELECT s.*, u.email, u.full_name, p.name as plan_name, p.price 
          FROM subscriptions s
          JOIN users u ON s.user_id = u.id
          JOIN subscription_plans p ON s.plan_id = p.id
          WHERE s.paypal_subscription_id = ?`,
-        [paypalSubscriptionId]
-    );
-
-    if (subscriptions.length > 0) {
-        const sub = subscriptions[0];
-
-        // 👇 ACTIVAR EL USUARIO
-        await pool.query(
-            'UPDATE users SET is_active = 1, updated_at = NOW() WHERE id = ?',
-            [sub.user_id]
-        );
-        console.log(`✅ Usuario ${sub.user_id} activado tras el pago`);
-
-        try {
-            await emailService.sendPaymentSuccessEmail(
-                sub.email,
-                sub.full_name,
-                sub.plan_name,
-                sub.price,
-                sub.current_period_end
+                [paypalSubscriptionId]
             );
-        } catch (emailError) {
-            console.error('❌ Error enviando correo de éxito:', emailError.message);
+
+            if (subscriptions.length > 0) {
+                const sub = subscriptions[0];
+
+                // 👇 ACTIVAR EL USUARIO
+                await pool.query(
+                    'UPDATE users SET is_active = 1, updated_at = NOW() WHERE id = ?',
+                    [sub.user_id]
+                );
+                console.log(`✅ Usuario ${sub.user_id} activado tras el pago`);
+
+                try {
+                    await emailService.sendPaymentSuccessEmail(
+                        sub.email,
+                        sub.full_name,
+                        sub.plan_name,
+                        sub.price,
+                        sub.current_period_end
+                    );
+                } catch (emailError) {
+                    console.error('❌ Error enviando correo de éxito:', emailError.message);
+                }
+            }
         }
-    }
-}
-        
+
         // ──────────────────────────────────────────────
         // EVENTO: PAGO COMPLETADO
         // ──────────────────────────────────────────────
@@ -250,19 +249,19 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
             const currency = event.resource.amount?.currency || 'USD';
             const transactionId = event.resource.id;
             const paypalSubscriptionId = event.resource.billing_agreement_id;
-            
+
             console.log(`💰 Pago completado`);
             console.log(`   Transacción: ${transactionId}`);
             console.log(`   Monto: ${amount} ${currency}`);
             console.log(`   Subscription ID: ${paypalSubscriptionId}`);
-            
+
             if (paypalSubscriptionId) {
                 // Verificar si ya se registró esta transacción
                 const [existingTx] = await pool.query(
                     'SELECT id FROM payment_transactions WHERE processor_transaction_id = ?',
                     [transactionId]
                 );
-                
+
                 if (existingTx.length === 0) {
                     // Obtener la suscripción relacionada
                     const [subscriptions] = await pool.query(
@@ -270,7 +269,7 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
                          WHERE paypal_subscription_id = ?`,
                         [paypalSubscriptionId]
                     );
-                    
+
                     if (subscriptions.length > 0) {
                         // Registrar transacción
                         await pool.query(
@@ -280,15 +279,15 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
                              VALUES (?, ?, 'paypal', ?, ?, ?, 'succeeded', NOW(), DATE_ADD(NOW(), INTERVAL 30 DAY))`,
                             [subscriptions[0].user_id, subscriptions[0].id, transactionId, amount, currency]
                         );
-                        
+
                         console.log(`✅ Transacción registrada en BD`);
-                        
+
                         // Obtener email del usuario para correo
                         const [users] = await pool.query(
                             'SELECT email, full_name FROM users WHERE id = ?',
                             [subscriptions[0].user_id]
                         );
-                        
+
                         if (users.length > 0) {
                             try {
                                 await emailService.sendChargeSuccessEmail(
@@ -308,15 +307,15 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
                 }
             }
         }
-        
+
         // ──────────────────────────────────────────────
         // EVENTO: PAGO FALLIDO
         // ──────────────────────────────────────────────
         if (eventType === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED') {
             const paypalSubscriptionId = event.resource.id;
-            
+
             console.log(`❌ Pago fallido para suscripción: ${paypalSubscriptionId}`);
-            
+
             // Marcar suscripción como past_due
             await pool.query(
                 `UPDATE subscriptions SET status = 'past_due' 
@@ -325,15 +324,15 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
             );
             console.log(`⚠️ Suscripción marcada como past_due`);
         }
-        
+
         // ──────────────────────────────────────────────
         // EVENTO: SUSCRIPCIÓN CANCELADA
         // ──────────────────────────────────────────────
         if (eventType === 'BILLING.SUBSCRIPTION.CANCELLED') {
             const paypalSubscriptionId = event.resource.id;
-            
+
             console.log(`🗑️ Suscripción cancelada: ${paypalSubscriptionId}`);
-            
+
             await pool.query(
                 `UPDATE subscriptions 
                  SET status = 'cancelled', 
@@ -342,19 +341,19 @@ if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
                  WHERE paypal_subscription_id = ?`,
                 [paypalSubscriptionId]
             );
-            
+
             console.log(`✅ Suscripción marcada como cancelada en BD`);
         }
-        
+
         console.log(`📩 ===== FIN WEBHOOK =====\n`);
         res.json({ received: true });
-        
+
     } catch (error) {
         console.error('\n❌ ===== ERROR WEBHOOK =====');
         console.error('Mensaje:', error.message);
         console.error('Stack:', error.stack);
         console.error('===========================\n');
-        
+
         // Siempre responder 200 para que PayPal no reintente
         res.status(200).json({ received: true, error: error.message });
     }

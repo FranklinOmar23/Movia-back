@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 
+
 /**
  * @swagger
  * components:
@@ -186,6 +187,9 @@ router.post('/register', authController.register);
  */
 router.post('/login', authController.login);
 
+
+
+
 const auth = require('../middleware/auth');
 
 /**
@@ -297,6 +301,8 @@ const auth = require('../middleware/auth');
  *       500:
  *         description: Error del servidor
  */
+router.get('/me', auth, authController.getMe);  
 router.patch('/profile', auth, authController.updateProfile);
+
 
 module.exports = router;

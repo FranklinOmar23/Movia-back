@@ -133,6 +133,40 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+exports.getMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Obtener datos del usuario
+    const [users] = await pool.query(
+      `SELECT id, full_name, email, role, is_active, avatar_url, created_at, updated_at
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const user = users[0];
+
+    // Obtener el estado de la suscripción activa más reciente
+    const [subs] = await pool.query(
+      `SELECT status FROM subscriptions 
+       WHERE user_id = ? AND status = 'active' 
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+
+    user.subscription_status = subs.length > 0 ? subs[0].status : null;
+
+    res.json({ user });
+  } catch (error) {
+    console.error('Error en getMe:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
 /**
  * Registrar un nuevo usuario (SOLO REGISTRO, sin pago)
  * POST /api/auth/register

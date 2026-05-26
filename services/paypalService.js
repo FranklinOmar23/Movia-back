@@ -175,6 +175,24 @@ async function cancelSubscription(paypalSubscriptionId) {
   });
 }
 
+/**
+ * ✅ NUEVO: Obtener detalles de una suscripción (incluye datos de la tarjeta)
+ */
+async function getSubscriptionDetails(paypalSubscriptionId) {
+  const token = await getAccessToken();
+
+  const response = await axios({
+    method: 'get',
+    url: `${PAYPAL_API}/v1/billing/subscriptions/${paypalSubscriptionId}`,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  return response.data;
+}
+
 async function verifyWebhook(headers, body) {
   const token = await getAccessToken();
   
@@ -210,5 +228,6 @@ module.exports = {
   createBillingPlan,
   createSubscription,
   cancelSubscription,
-  verifyWebhook
+  verifyWebhook,
+  getSubscriptionDetails  // ✅ NUEVO
 };

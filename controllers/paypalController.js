@@ -7,7 +7,6 @@ const emailService = require('../services/emailService');
  * Crear suscripción de PayPal para un usuario
  * POST /api/paypal/create-subscription
  */
-// En paypalController.js, modificar createPayPalSubscription
 exports.createPayPalSubscription = async (req, res) => {
     try {
         const { userId, planId } = req.body;
@@ -74,7 +73,7 @@ exports.createPayPalSubscription = async (req, res) => {
             paypalPlanId,
             user.email,
             user.full_name,
-            `${frontendUrl}/payment/success`,  // Redirige al frontend
+            `${frontendUrl}/payment/success`,
             `${frontendUrl}/payment/cancel`
         );
 
@@ -97,12 +96,11 @@ exports.createPayPalSubscription = async (req, res) => {
 
         console.log(`✅ Suscripción pendiente creada en BD: ${newSubscription.insertId}`);
 
-        // DESPUÉS (poner esto en su lugar):
         try {
             await emailService.sendWelcomeEmail(
                 user.email,
                 user.full_name,
-                result.approveUrl,  // 👈 link de pago
+                result.approveUrl,
                 plan.name,
                 plan.price,
                 plan.currency
@@ -117,7 +115,7 @@ exports.createPayPalSubscription = async (req, res) => {
             message: 'Suscripción creada. Revisa tu correo para completar el pago.',
             paypalSubscriptionId: result.subscriptionId,
             subscriptionId: newSubscription.insertId,
-            approveUrl: result.approveUrl,  // Opcional: devolver URL
+            approveUrl: result.approveUrl,
             planName: plan.name,
             price: plan.price,
             currency: plan.currency
@@ -133,6 +131,70 @@ exports.createPayPalSubscription = async (req, res) => {
 };
 
 /**
+ * ✅ NUEVO: Guardar método de pago del usuario en BD
+ * @param {number} userId
+ * @param {string} paypalSubscriptionId
+ */
+async function savePaymentMethod(userId, paypalSubscriptionId) {
+    try {
+        const subDetails = await paypalService.getSubscriptionDetails(paypalSubscriptionId);
+        const paymentSource = subDetails.payment_source;
+
+        let card_last4   = null;
+        let card_brand   = null;
+        let card_exp_month = null;
+        let card_exp_year  = null;
+        let processor_token = null;
+
+        if (paymentSource?.card) {
+            // Usuario pagó con tarjeta directa
+            card_last4   = paymentSource.card.last_digits   || null;
+            card_brand   = paymentSource.card.brand         || null; // VISA, MASTERCARD, etc.
+            processor_token = paymentSource.card.vault_id   || paypalSubscriptionId;
+
+            // PayPal devuelve expiry como "2027-05"
+            if (paymentSource.card.expiry) {
+                const parts = paymentSource.card.expiry.split('-');
+                card_exp_year  = parts[0] || null; // 2027
+                card_exp_month = parts[1] || null; // 05
+            }
+
+            console.log(`💳 Tarjeta detectada: ${card_brand} **** ${card_last4} vence ${card_exp_month}/${card_exp_year}`);
+
+        } else if (paymentSource?.paypal) {
+            // Usuario pagó con cuenta PayPal (no tarjeta directa)
+            processor_token = paymentSource.paypal.vault_id || paypalSubscriptionId;
+            card_brand = 'PAYPAL';
+            console.log(`💳 Pago via cuenta PayPal (vault_id: ${processor_token})`);
+        } else {
+            // Fallback: guardar solo el subscription ID como token
+            processor_token = paypalSubscriptionId;
+            card_brand = 'PAYPAL';
+            console.log(`⚠️ No se encontró payment_source, guardando subscription ID como token`);
+        }
+
+        // Insertar o actualizar en payment_methods
+        await pool.query(
+            `INSERT INTO payment_methods 
+             (user_id, processor, processor_token, card_brand, card_last4, card_exp_month, card_exp_year, is_default)
+             VALUES (?, 'paypal', ?, ?, ?, ?, ?, 1)
+             ON DUPLICATE KEY UPDATE
+                 card_brand     = VALUES(card_brand),
+                 card_last4     = VALUES(card_last4),
+                 card_exp_month = VALUES(card_exp_month),
+                 card_exp_year  = VALUES(card_exp_year),
+                 is_default     = 1`,
+            [userId, processor_token, card_brand, card_last4, card_exp_month, card_exp_year]
+        );
+
+        console.log(`✅ Método de pago guardado para usuario ${userId}`);
+    } catch (err) {
+        // No interrumpir el flujo si falla guardar la tarjeta
+        console.error(`⚠️ No se pudo guardar el método de pago:`, err.message);
+    }
+}
+
+/**
  * Webhook de PayPal
  * POST /api/paypal/webhook
  */
@@ -140,7 +202,6 @@ exports.paypalWebhook = async (req, res) => {
     console.log('🔔 WEBHOOK RECIBIDO');
 
     try {
-        // Para desarrollo, desactivar verificación temporalmente
         let isValid = true;
 
         if (process.env.NODE_ENV === 'production') {
@@ -166,7 +227,6 @@ exports.paypalWebhook = async (req, res) => {
 
             console.log(`✅ Suscripción aprobada por el usuario: ${paypalSubscriptionId}`);
 
-            // Buscar la suscripción pendiente en BD
             const [subscriptions] = await pool.query(
                 `SELECT id, user_id, plan_id FROM subscriptions 
                  WHERE paypal_subscription_id = ? AND status = 'pending'`,
@@ -174,7 +234,6 @@ exports.paypalWebhook = async (req, res) => {
             );
 
             if (subscriptions.length > 0) {
-                // Actualizar estado a 'active'
                 const newEndDate = new Date();
                 newEndDate.setDate(newEndDate.getDate() + 30);
 
@@ -195,38 +254,41 @@ exports.paypalWebhook = async (req, res) => {
         // ──────────────────────────────────────────────
         // EVENTO: SUSCRIPCIÓN ACTIVADA
         // ──────────────────────────────────────────────
-        i// En el webhook, cuando se activa la suscripción o se completa el pago
         if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
             const paypalSubscriptionId = event.resource.id;
 
             await pool.query(
                 `UPDATE subscriptions 
-         SET status = 'active', 
-             current_period_start = NOW(),
-             current_period_end = DATE_ADD(NOW(), INTERVAL 30 DAY)
-         WHERE paypal_subscription_id = ?`,
+                 SET status = 'active', 
+                     current_period_start = NOW(),
+                     current_period_end = DATE_ADD(NOW(), INTERVAL 30 DAY)
+                 WHERE paypal_subscription_id = ?`,
                 [paypalSubscriptionId]
             );
 
             const [subscriptions] = await pool.query(
                 `SELECT s.*, u.email, u.full_name, p.name as plan_name, p.price 
-         FROM subscriptions s
-         JOIN users u ON s.user_id = u.id
-         JOIN subscription_plans p ON s.plan_id = p.id
-         WHERE s.paypal_subscription_id = ?`,
+                 FROM subscriptions s
+                 JOIN users u ON s.user_id = u.id
+                 JOIN subscription_plans p ON s.plan_id = p.id
+                 WHERE s.paypal_subscription_id = ?`,
                 [paypalSubscriptionId]
             );
 
             if (subscriptions.length > 0) {
                 const sub = subscriptions[0];
 
-                // 👇 ACTIVAR EL USUARIO
+                // Activar usuario
                 await pool.query(
                     'UPDATE users SET is_active = 1, updated_at = NOW() WHERE id = ?',
                     [sub.user_id]
                 );
                 console.log(`✅ Usuario ${sub.user_id} activado tras el pago`);
 
+                // ✅ NUEVO: Guardar método de pago (tarjeta)
+                await savePaymentMethod(sub.user_id, paypalSubscriptionId);
+
+                // Correo de éxito
                 try {
                     await emailService.sendPaymentSuccessEmail(
                         sub.email,
@@ -256,14 +318,12 @@ exports.paypalWebhook = async (req, res) => {
             console.log(`   Subscription ID: ${paypalSubscriptionId}`);
 
             if (paypalSubscriptionId) {
-                // Verificar si ya se registró esta transacción
                 const [existingTx] = await pool.query(
                     'SELECT id FROM payment_transactions WHERE processor_transaction_id = ?',
                     [transactionId]
                 );
 
                 if (existingTx.length === 0) {
-                    // Obtener la suscripción relacionada
                     const [subscriptions] = await pool.query(
                         `SELECT id, user_id FROM subscriptions 
                          WHERE paypal_subscription_id = ?`,
@@ -271,7 +331,6 @@ exports.paypalWebhook = async (req, res) => {
                     );
 
                     if (subscriptions.length > 0) {
-                        // Registrar transacción
                         await pool.query(
                             `INSERT INTO payment_transactions 
                              (user_id, subscription_id, processor, processor_transaction_id, 
@@ -282,7 +341,6 @@ exports.paypalWebhook = async (req, res) => {
 
                         console.log(`✅ Transacción registrada en BD`);
 
-                        // Obtener email del usuario para correo
                         const [users] = await pool.query(
                             'SELECT email, full_name FROM users WHERE id = ?',
                             [subscriptions[0].user_id]
@@ -316,7 +374,6 @@ exports.paypalWebhook = async (req, res) => {
 
             console.log(`❌ Pago fallido para suscripción: ${paypalSubscriptionId}`);
 
-            // Marcar suscripción como past_due
             await pool.query(
                 `UPDATE subscriptions SET status = 'past_due' 
                  WHERE paypal_subscription_id = ?`,

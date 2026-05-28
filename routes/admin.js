@@ -844,4 +844,52 @@ router.post('/transactions/:id/retry', adminAuth, adminController.retryTransacti
  */
 router.patch('/users/:id', adminAuth, adminController.updateUser);
 
+/**
+ * @swagger
+ * /api/admin/users/{id}/payment-reminder:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Enviar recordatorio de pago a usuario inactivo
+ *     description: Envía un correo al usuario recordándole que complete su pago para activar la cuenta
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del usuario
+ *         example: 5
+ *     responses:
+ *       200:
+ *         description: Recordatorio enviado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Recordatorio enviado exitosamente a juan@example.com
+ *       400:
+ *         description: El usuario ya está activo o no tiene suscripción pendiente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: El usuario ya tiene la cuenta activa
+ *       404:
+ *         description: Usuario no encontrado
+ *       500:
+ *         description: Error al enviar recordatorio
+ */
+router.post('/users/:id/payment-reminder', adminAuth, adminController.sendPaymentReminder);
+
 module.exports = router;

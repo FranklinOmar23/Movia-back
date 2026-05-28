@@ -486,6 +486,222 @@ exports.updateUser = async (req, res) => {
   }
 };
 
+exports.sendPaymentReminder = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [users] = await pool.query(`
+      SELECT u.id, u.full_name, u.email, u.is_active,
+             s.id AS subscription_id, s.status AS sub_status,
+             s.paypal_subscription_id,
+             p.id AS plan_id, p.name AS plan_name, p.price, p.currency,
+             p.paypal_plan_id, p.billing_interval, p.description
+      FROM users u
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      LEFT JOIN subscription_plans p ON s.plan_id = p.id
+      WHERE u.id = ?
+      ORDER BY s.created_at DESC
+      LIMIT 1
+    `, [id]);
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const user = users[0];
+
+    if (user.is_active) {
+      return res.status(400).json({ error: 'El usuario ya tiene la cuenta activa' });
+    }
+
+    const paypalService = require('../services/paypalService');
+    const { formatDate } = require('../utils/helpers');
+
+    // Obtener plan activo
+    let plan = null;
+    if (user.plan_id) {
+      const [plans] = await pool.query(
+        'SELECT * FROM subscription_plans WHERE id = ?',
+        [user.plan_id]
+      );
+      if (plans.length > 0) plan = plans[0];
+    }
+
+    if (!plan) {
+      const [plans] = await pool.query(
+        'SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY price ASC LIMIT 1'
+      );
+      if (plans.length > 0) plan = plans[0];
+    }
+
+    if (!plan) {
+      return res.status(500).json({ error: 'No hay planes disponibles' });
+    }
+
+    // Obtener o crear plan en PayPal
+    // SIEMPRE limpiar el paypal_plan_id y recrear para evitar IDs expirados
+    let paypalPlanId = plan.paypal_plan_id;
+
+    try {
+      // Verificar si el plan de PayPal sigue vigente intentando crear suscripción
+      // Si falla el 404, recreamos el plan
+      if (!paypalPlanId) {
+        throw new Error('Sin plan PayPal, crear uno nuevo');
+      }
+
+      // Intentar crear suscripción con el plan existente
+      const frontendUrl = process.env.FRONTEND_URL || 'https://movia.arcodedominicana.com';
+      const result = await paypalService.createSubscription(
+        paypalPlanId,
+        user.email,
+        user.full_name,
+        `${frontendUrl}/payment/success`,
+        `${frontendUrl}/payment/cancel`
+      );
+
+      // Actualizar suscripción en BD
+      const startDate = new Date();
+      const endDate   = new Date();
+      endDate.setDate(endDate.getDate() + 30);
+
+      if (user.subscription_id) {
+        await pool.query(
+          `UPDATE subscriptions 
+           SET paypal_subscription_id = ?, plan_id = ?,
+               current_period_start = ?, current_period_end = ?,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [result.subscriptionId, plan.id, formatDate(startDate), formatDate(endDate), user.subscription_id]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO subscriptions 
+           (user_id, plan_id, paypal_subscription_id, status,
+            current_period_start, current_period_end, created_at, cancel_at_period_end)
+           VALUES (?, ?, ?, 'pending', ?, ?, NOW(), 0)`,
+          [user.id, plan.id, result.subscriptionId, formatDate(startDate), formatDate(endDate)]
+        );
+      }
+
+      // Enviar correo
+      await emailService.sendPaymentReminderEmail(
+        user.email,
+        user.full_name,
+        result.approveUrl,
+        plan.name,
+        plan.price,
+        plan.currency
+      );
+
+      console.log(`📧 Recordatorio enviado a ${user.email} → ${result.approveUrl}`);
+
+      return res.json({
+        success: true,
+        message: `Recordatorio enviado a ${user.email}`,
+        approveUrl: result.approveUrl
+      });
+
+    } catch (firstError) {
+      // El plan PayPal expiró o es inválido → recrear producto y plan
+      console.log(`⚠️ Plan PayPal inválido (${firstError.message}), recreando...`);
+
+      try {
+        // Limpiar paypal_plan_id en BD para forzar recreación
+        await pool.query(
+          'UPDATE subscription_plans SET paypal_plan_id = NULL WHERE id = ?',
+          [plan.id]
+        );
+
+        // Crear nuevo producto y plan en PayPal
+        const productId = await paypalService.createProduct(
+          plan.name,
+          plan.description || `${plan.name} - Suscripción MOVIA`
+        );
+
+        const planResult = await paypalService.createBillingPlan(
+          productId,
+          plan.name,
+          parseFloat(plan.price),
+          plan.billing_interval
+        );
+
+        paypalPlanId = planResult.planId;
+
+        // Guardar nuevo paypal_plan_id
+        await pool.query(
+          'UPDATE subscription_plans SET paypal_plan_id = ? WHERE id = ?',
+          [paypalPlanId, plan.id]
+        );
+
+        console.log(`✅ Nuevo plan PayPal creado: ${paypalPlanId}`);
+
+        // Crear suscripción con el nuevo plan
+        const frontendUrl = process.env.FRONTEND_URL || 'https://movia.arcodedominicana.com';
+        const result = await paypalService.createSubscription(
+          paypalPlanId,
+          user.email,
+          user.full_name,
+          `${frontendUrl}/payment/success`,
+          `${frontendUrl}/payment/cancel`
+        );
+
+        // Actualizar BD
+        const startDate = new Date();
+        const endDate   = new Date();
+        endDate.setDate(endDate.getDate() + 30);
+
+        if (user.subscription_id) {
+          await pool.query(
+            `UPDATE subscriptions 
+             SET paypal_subscription_id = ?, plan_id = ?,
+                 current_period_start = ?, current_period_end = ?,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [result.subscriptionId, plan.id, formatDate(startDate), formatDate(endDate), user.subscription_id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO subscriptions 
+             (user_id, plan_id, paypal_subscription_id, status,
+              current_period_start, current_period_end, created_at, cancel_at_period_end)
+             VALUES (?, ?, ?, 'pending', ?, ?, NOW(), 0)`,
+            [user.id, plan.id, result.subscriptionId, formatDate(startDate), formatDate(endDate)]
+          );
+        }
+
+        // Enviar correo
+        await emailService.sendPaymentReminderEmail(
+          user.email,
+          user.full_name,
+          result.approveUrl,
+          plan.name,
+          plan.price,
+          plan.currency
+        );
+
+        console.log(`📧 Recordatorio enviado a ${user.email} → ${result.approveUrl}`);
+
+        return res.json({
+          success: true,
+          message: `Recordatorio enviado a ${user.email}`,
+          approveUrl: result.approveUrl
+        });
+
+      } catch (secondError) {
+        console.error('❌ Error recreando plan PayPal:', secondError.message);
+        return res.status(500).json({
+          error: 'No se pudo generar el link de pago: ' + secondError.message
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ Error en sendPaymentReminder:', error);
+    res.status(500).json({ error: 'Error al enviar recordatorio: ' + error.message });
+  }
+};
+
+
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;

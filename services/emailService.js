@@ -361,6 +361,97 @@ async function sendPaymentSetupEmail(email, username, subscriptionName, price, n
   `;
   return sendEmail({ to: email, subject: 'Completa tu registro de pago - MOVIA', html });
 }
+
+async function sendPaymentReminderEmail(email, username, paymentLink, planName, price, currency) {
+  const subject = '⏰ Recuerda activar tu cuenta MOVIA';
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; padding: 30px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .alert-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 20px; border-radius: 8px; margin: 20px 0; }
+        .plan-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f5576c; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .price { font-size: 24px; font-weight: bold; color: #f5576c; }
+        .btn { 
+          display: inline-block; 
+          background: #f5576c; 
+          color: white !important; 
+          padding: 14px 40px; 
+          text-decoration: none; 
+          border-radius: 25px; 
+          font-weight: bold;
+          font-size: 16px;
+          margin: 20px 0;
+        }
+        .steps { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .link-box { word-break: break-all; font-size: 12px; margin-top: 20px; padding: 10px; background: #eee; border-radius: 5px; }
+        .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎬 MOVIA</h1>
+          <p>¡Tu cuenta te está esperando!</p>
+        </div>
+        <div class="content">
+          <h2>Hola ${username} 👋</h2>
+
+          <div class="alert-box">
+            <strong>⚠️ Tu cuenta está inactiva</strong><br>
+            Notamos que completaste tu registro pero aún no has realizado el pago para activar tu suscripción.
+          </div>
+
+          <p>¡No te quedes sin acceso a todo el contenido de MOVIA! Completa tu pago en pocos minutos y empieza a disfrutar.</p>
+
+          <div class="plan-box">
+            <h3>📋 Tu plan pendiente:</h3>
+            <p><strong>Plan:</strong> ${planName}</p>
+            <p><strong>Precio:</strong> <span class="price">${price} ${currency}</span> / mes</p>
+            <p><strong>Beneficios:</strong> Acceso ilimitado, sin publicidad, calidad HD.</p>
+          </div>
+
+          <div class="steps">
+            <h3>Solo falta un paso 🚀</h3>
+            <p>1️⃣ Haz clic en el botón de abajo</p>
+            <p>2️⃣ Completa el pago con PayPal</p>
+            <p>3️⃣ ¡Tu cuenta se activa al instante! ✅</p>
+          </div>
+
+          <div style="text-align: center;">
+            <a href="${paymentLink}" class="btn">💰 Activar mi cuenta ahora</a>
+          </div>
+
+          <div class="link-box">
+            <strong>🔗 Si el botón no funciona, copia este enlace:</strong><br>
+            <a href="${paymentLink}" style="color:#f5576c;">${paymentLink}</a>
+          </div>
+
+          <p><strong>⚠️ Importante:</strong> Si el enlace expiró, contáctanos y te enviaremos uno nuevo.</p>
+
+          <p style="font-size: 12px; color: #666;">
+            ¿Necesitas ayuda? Escríbenos a 
+            <a href="mailto:movia@arcodedominicana.com">movia@arcodedominicana.com</a>
+          </p>
+        </div>
+        <div class="footer">
+          <p>© 2024 MOVIA - Todos los derechos reservados</p>
+          <p>Este es un correo automático, por favor no responder.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  return sendEmail({ to: email, subject, html });
+}
+
 async function sendWelcomeEmail(email, username, paymentLink, planName, price, currency) {
   const subject = '🎬 ¡Bienvenido a MOVIA! Activa tu suscripción';
   
@@ -451,5 +542,6 @@ module.exports = {
   sendPaymentSetupEmail,
   sendPaymentSuccessEmail,
   sendChargeSuccessEmail, 
-  sendChargeFailedEmail 
+  sendChargeFailedEmail,
+  sendPaymentReminderEmail
 };

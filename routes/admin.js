@@ -426,6 +426,46 @@ router.get('/users/:id', adminAuth, adminController.getUserById); // ✅ DESPUÉ
 
 /**
  * @swagger
+ * /api/admin/users/{id}/watchlist:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Obtener watchlist de un usuario
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Lista de items en watchlist del usuario
+ */
+router.get('/users/:id/watchlist', adminAuth, adminController.getUserWatchlist);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/watch-history:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Obtener historial de reproducción de un usuario
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Historial de reproducciones del usuario
+ */
+router.get('/users/:id/watch-history', adminAuth, adminController.getUserWatchHistory);
+
+/**
+ * @swagger
  * /api/admin/users/{id}:
  *   patch:
  *     tags: [Admin]

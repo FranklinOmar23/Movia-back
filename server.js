@@ -12,6 +12,8 @@ const plansRoutes = require('./routes/plans');
 const paypalRoutes = require('./routes/paypal');
 const watchHistoryRoutes = require('./routes/watchHistory');
 const watchlistRoutes = require('./routes/watchlist');
+const usersRoutes = require('./routes/users');
+const groupsRoutes = require('./routes/groups');
 
 // Job diario de cobros
 const { startDailyJob } = require('./jobs/dailyCharge');
@@ -103,6 +105,8 @@ app.use('/api/plans', plansRoutes);
 app.use('/api/paypal', paypalRoutes);
 app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/groups', groupsRoutes);
 
 // ──────────────────────────────────────────────────────
 // MANEJO DE ERRORES 404

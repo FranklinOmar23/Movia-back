@@ -3,6 +3,55 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const emailService = require('../services/emailService');
 
+const getRequestIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || 'unknown';
+};
+
+const logLoginEvent = async ({ userId, email, ipAddress, success, reason }) => {
+  try {
+    await pool.query(
+      `INSERT INTO login_logs (user_id, email, ip_address, success, reason, login_date, login_time, created_at)
+       VALUES (?, ?, ?, ?, ?, CURDATE(), CURTIME(), NOW())`,
+      [userId || null, email, ipAddress, success ? 1 : 0, reason || null]
+    );
+  } catch (error) {
+    console.error('❌ Error registrando login_logs:', error);
+  }
+};
+
+const logLogoutEvent = async ({ userId, email, ipAddress, reason }) => {
+  try {
+    await pool.query(
+      `INSERT INTO logout_logs (user_id, email, ip_address, reason, logout_date, logout_time, created_at)
+       VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), NOW())`,
+      [userId || null, email, ipAddress, reason || null]
+    );
+  } catch (error) {
+    console.error('❌ Error registrando logout_logs:', error);
+  }
+};
+
+const upsertUserStatus = async ({ userId, isOnline }) => {
+  try {
+    await pool.query(
+      `INSERT INTO user_status (user_id, is_online, last_seen, last_login_at, last_logout_at)
+       VALUES (?, ?, NOW(), CASE WHEN ? = 1 THEN NOW() ELSE NULL END, CASE WHEN ? = 0 THEN NOW() ELSE NULL END)
+       ON DUPLICATE KEY UPDATE
+         is_online = VALUES(is_online),
+         last_seen = NOW(),
+         last_login_at = CASE WHEN VALUES(is_online) = 1 THEN NOW() ELSE last_login_at END,
+         last_logout_at = CASE WHEN VALUES(is_online) = 0 THEN NOW() ELSE last_logout_at END`,
+      [userId, isOnline ? 1 : 0, isOnline ? 1 : 0, isOnline ? 0 : 1]
+    );
+  } catch (error) {
+    console.error('❌ Error actualizando user_status:', error);
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -22,6 +71,7 @@ exports.login = async (req, res) => {
     }
 
     if (!user.is_active) {
+      await logLoginEvent({ userId: user.id, email: user.email, ipAddress: getRequestIp(req), success: false, reason: 'Cuenta desactivada' });
       return res.status(403).json({ error: 'Cuenta desactivada' });
     }
 
@@ -30,6 +80,11 @@ exports.login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    await Promise.all([
+      logLoginEvent({ userId: user.id, email: user.email, ipAddress: getRequestIp(req), success: true }),
+      upsertUserStatus({ userId: user.id, isOnline: true })
+    ]);
 
     res.json({ 
       token, 
@@ -160,10 +215,49 @@ exports.getMe = async (req, res) => {
 
     user.subscription_status = subs.length > 0 ? subs[0].status : null;
 
+    const [statusRows] = await pool.query(
+      'SELECT is_online, last_login_at, last_logout_at, last_seen FROM user_status WHERE user_id = ?',
+      [userId]
+    );
+    user.active_status = statusRows[0] || { is_online: false, last_login_at: null, last_logout_at: null, last_seen: null };
+
     res.json({ user });
   } catch (error) {
     console.error('Error en getMe:', error);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const email = req.user.email;
+    const ipAddress = getRequestIp(req);
+    const reason = req.body.reason || 'logout';
+
+    await Promise.all([
+      logLogoutEvent({ userId, email, ipAddress, reason }),
+      upsertUserStatus({ userId, isOnline: false })
+    ]);
+
+    res.json({ message: 'Logout registrado correctamente' });
+  } catch (error) {
+    console.error('Error en logout:', error);
+    res.status(500).json({ error: 'Error al cerrar sesión' });
+  }
+};
+
+exports.getStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [rows] = await pool.query(
+      'SELECT is_online, last_login_at, last_logout_at, last_seen FROM user_status WHERE user_id = ?',
+      [userId]
+    );
+    res.json({ user_id: userId, status: rows[0] || { is_online: false, last_login_at: null, last_logout_at: null, last_seen: null } });
+  } catch (error) {
+    console.error('Error en getStatus:', error);
+    res.status(500).json({ error: 'Error al obtener estado del usuario' });
   }
 };
 

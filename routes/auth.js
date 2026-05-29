@@ -8,6 +8,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const auth = require('../middleware/auth');
 
 
 /**
@@ -186,11 +187,8 @@ router.post('/register', authController.register);
  *         description: Error del servidor
  */
 router.post('/login', authController.login);
-
-
-
-
-const auth = require('../middleware/auth');
+router.post('/logout', auth, authController.logout);
+router.get('/status', auth, authController.getStatus);
 
 /**
  * @swagger

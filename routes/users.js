@@ -151,4 +151,24 @@ router.get('/:id/profile', auth, userController.getUserProfile);
  */
 router.post('/friends/:requestId/accept', auth, userController.acceptFriendRequest);
 
+/**
+ * @swagger
+ * /api/users/friends/{requestId}/reject:
+ *   post:
+ *     tags: [Users]
+ *     summary: Rechazar solicitud de amistad
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Solicitud rechazada
+ */
+router.post('/friends/:requestId/reject', auth, userController.rejectFriendRequest);
+
 module.exports = router;

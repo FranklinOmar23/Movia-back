@@ -258,3 +258,46 @@ exports.getSentRequests = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener solicitudes enviadas' });
   }
 };
+
+exports.rejectFriendRequest = async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const requestId = parseInt(req.params.requestId, 10);
+
+    if (Number.isNaN(requestId)) {
+      return res.status(400).json({ error: 'requestId inválido' });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, requester_id, receiver_id, status
+       FROM friend_requests
+       WHERE id = ?`,
+      [requestId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Solicitud no encontrada' });
+    }
+
+    const request = rows[0];
+    if (request.receiver_id !== currentUserId) {
+      return res.status(403).json({ error: 'No puedes rechazar esta solicitud' });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'La solicitud ya fue respondida' });
+    }
+
+    await pool.query(
+      `UPDATE friend_requests
+       SET status = 'rejected', responded_at = NOW()
+       WHERE id = ?`,
+      [requestId]
+    );
+
+    res.json({ message: 'Solicitud de amistad rechazada' });
+  } catch (error) {
+    console.error('❌ Error en rejectFriendRequest:', error);
+    res.status(500).json({ error: 'Error al rechazar solicitud de amistad' });
+  }
+};

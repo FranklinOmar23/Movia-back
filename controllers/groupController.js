@@ -26,16 +26,16 @@ const hasAccessToGroup = async (userId, groupId) => {
 exports.createGroup = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, description } = req.body;
+    const { name, description, is_public = 0 } = req.body;  // ← nuevo campo
 
     if (!name || name.trim().length < 3) {
-      return res.status(400).json({ error: 'El nombre del grupo es requerido y debe tener al menos 3 caracteres' });
+      return res.status(400).json({ error: 'El nombre del grupo debe tener al menos 3 caracteres' });
     }
 
     const [result] = await pool.query(
-      `INSERT INTO watch_groups (user_id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, NOW(), NOW())`,
-      [userId, name.trim(), description || null]
+      `INSERT INTO watch_groups (user_id, name, description, is_public, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())`,
+      [userId, name.trim(), description || null, is_public ? 1 : 0]  // ← incluirlo
     );
 
     res.status(201).json({ message: 'Grupo creado exitosamente', group_id: result.insertId });
@@ -60,6 +60,76 @@ exports.getMyGroups = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en getMyGroups:', error);
     res.status(500).json({ error: 'Error al obtener grupos' });
+  }
+};
+exports.updateGroup = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const groupId = parseInt(req.params.groupId, 10);
+    const { name, description, is_public } = req.body;
+
+    if (Number.isNaN(groupId)) {
+      return res.status(400).json({ error: 'ID de grupo inválido' });
+    }
+
+    // Verificar que el grupo existe y pertenece al usuario
+    const [groups] = await pool.query(
+      'SELECT * FROM watch_groups WHERE id = ? AND user_id = ?',
+      [groupId, userId]
+    );
+
+    if (groups.length === 0) {
+      return res.status(404).json({ error: 'Grupo no encontrado o no tienes permiso para editarlo' });
+    }
+
+    // Construir dinámicamente los campos a actualizar
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) {
+      if (!name || name.trim().length < 3) {
+        return res.status(400).json({ error: 'El nombre debe tener al menos 3 caracteres' });
+      }
+      updates.push('name = ?');
+      values.push(name.trim());
+    }
+
+    if (description !== undefined) {
+      updates.push('description = ?');
+      values.push(description.trim() || null);
+    }
+
+    if (is_public !== undefined) {
+      updates.push('is_public = ?');
+      values.push(is_public ? 1 : 0);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+    }
+
+    updates.push('updated_at = NOW()');
+    values.push(groupId);
+
+    await pool.query(
+      `UPDATE watch_groups SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    // Devolver el grupo actualizado
+    const [updatedGroup] = await pool.query(
+      'SELECT id, user_id, name, description, is_public, created_at, updated_at FROM watch_groups WHERE id = ?',
+      [groupId]
+    );
+
+    res.json({
+      message: 'Grupo actualizado exitosamente',
+      group: updatedGroup[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Error en updateGroup:', error);
+    res.status(500).json({ error: 'Error al actualizar el grupo' });
   }
 };
 
@@ -105,6 +175,7 @@ exports.getGroupById = async (req, res) => {
        WHERE id = ?`,
       [groupId]
     );
+    
 
     if (groups.length === 0) {
       return res.status(404).json({ error: 'Grupo no encontrado' });
@@ -118,12 +189,12 @@ exports.getGroupById = async (req, res) => {
       [groupId]
     );
 
-    const [shares] = await pool.query(
-      `SELECT friend_id, can_edit, created_at
-       FROM watch_group_shares
-       WHERE group_id = ?`,
-      [groupId]
-    );
+ const [shares] = await pool.query(
+  `SELECT id AS share_id, friend_id, can_edit, created_at 
+   FROM watch_group_shares
+   WHERE group_id = ?`,
+  [groupId]
+);
 
     res.json({ group: groups[0], items, shares });
   } catch (error) {
@@ -132,6 +203,77 @@ exports.getGroupById = async (req, res) => {
   }
 };
 
+// Actualizar un permiso compartido (PATCH /:groupId/share/:shareId)
+exports.updateGroupShare = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const groupId = parseInt(req.params.groupId, 10);
+    const shareId = parseInt(req.params.shareId, 10);
+    const { can_edit } = req.body;
+
+    if (isNaN(groupId) || isNaN(shareId)) {
+      return res.status(400).json({ error: 'IDs inválidos' });
+    }
+
+    // Verificar que el usuario sea el dueño del grupo
+    const [groupRows] = await pool.query(
+      'SELECT user_id FROM watch_groups WHERE id = ?',
+      [groupId]
+    );
+    if (groupRows.length === 0) {
+      return res.status(404).json({ error: 'Grupo no encontrado' });
+    }
+    if (groupRows[0].user_id !== userId) {
+      return res.status(403).json({ error: 'Solo el creador del grupo puede modificar permisos' });
+    }
+
+    // Actualizar can_edit del share
+    await pool.query(
+      'UPDATE watch_group_shares SET can_edit = ? WHERE id = ? AND group_id = ?',
+      [can_edit ? 1 : 0, shareId, groupId]
+    );
+
+    res.json({ message: 'Permiso actualizado correctamente' });
+  } catch (error) {
+    console.error('❌ Error en updateGroupShare:', error);
+    res.status(500).json({ error: 'Error al actualizar el permiso' });
+  }
+};
+
+// Eliminar un permiso compartido (DELETE /:groupId/share/:shareId)
+exports.removeGroupShare = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const groupId = parseInt(req.params.groupId, 10);
+    const shareId = parseInt(req.params.shareId, 10);
+
+    if (isNaN(groupId) || isNaN(shareId)) {
+      return res.status(400).json({ error: 'IDs inválidos' });
+    }
+
+    // Verificar que el usuario sea el dueño del grupo
+    const [groupRows] = await pool.query(
+      'SELECT user_id FROM watch_groups WHERE id = ?',
+      [groupId]
+    );
+    if (groupRows.length === 0) {
+      return res.status(404).json({ error: 'Grupo no encontrado' });
+    }
+    if (groupRows[0].user_id !== userId) {
+      return res.status(403).json({ error: 'Solo el creador del grupo puede eliminar permisos' });
+    }
+
+    await pool.query(
+      'DELETE FROM watch_group_shares WHERE id = ? AND group_id = ?',
+      [shareId, groupId]
+    );
+
+    res.json({ message: 'Permiso eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ Error en removeGroupShare:', error);
+    res.status(500).json({ error: 'Error al eliminar el permiso' });
+  }
+};
 exports.addItem = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -149,8 +291,17 @@ exports.addItem = async (req, res) => {
     if (groups.length === 0) {
       return res.status(404).json({ error: 'Grupo no encontrado' });
     }
+    // ✅ Fix — también permite usuarios con can_edit = true
     if (groups[0].user_id !== userId) {
-      return res.status(403).json({ error: 'Solo el creador del grupo puede añadir items' });
+      const [shareRows] = await pool.query(
+        `SELECT can_edit FROM watch_group_shares
+     WHERE group_id = ? AND friend_id = ? AND can_edit = 1`,
+        [groupId, userId]
+      );
+
+      if (shareRows.length === 0) {
+        return res.status(403).json({ error: 'No tienes permiso para añadir items a este grupo' });
+      }
     }
 
     const [existing] = await pool.query(
@@ -190,10 +341,18 @@ exports.removeItem = async (req, res) => {
     if (groups.length === 0) {
       return res.status(404).json({ error: 'Grupo no encontrado' });
     }
+    // ✅ Fix en removeItem
     if (groups[0].user_id !== userId) {
-      return res.status(403).json({ error: 'Solo el creador del grupo puede eliminar items' });
-    }
+      const [shareRows] = await pool.query(
+        `SELECT can_edit FROM watch_group_shares
+     WHERE group_id = ? AND friend_id = ? AND can_edit = 1`,
+        [groupId, userId]
+      );
 
+      if (shareRows.length === 0) {
+        return res.status(403).json({ error: 'No tienes permiso para eliminar items de este grupo' });
+      }
+    }
     const [result] = await pool.query(
       'DELETE FROM watch_group_items WHERE id = ? AND group_id = ?',
       [itemId, groupId]

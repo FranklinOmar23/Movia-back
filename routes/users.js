@@ -133,47 +133,22 @@ router.post('/friends/:requestId/accept', auth, userController.acceptFriendReque
 
 /**
  * @swagger
- * /api/users/friends/{friendId}/cancel:
- *   delete:
+ * /api/users/friends/{requestId}/reject:
+ *   post:
  *     tags: [Users]
- *     summary: Cancelar una solicitud de amistad enviada
+ *     summary: Rechazar solicitud de amistad
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: friendId
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID del usuario al que le enviaste la solicitud
- *     responses:
- *       200:
- *         description: Solicitud cancelada exitosamente
- *       400:
- *         description: ID inválido
- *       404:
- *         description: No existe solicitud pendiente enviada por ti
- */
-router.delete('/friends/:friendId/cancel', auth, userController.cancelFriendRequest);
-
-/**
- * @swagger
- * /api/users/{id}/profile:
- *   get:
- *     tags: [Users]
- *     summary: Obtener perfil de un usuario o del propio usuario
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
+ *         name: requestId
  *         required: true
  *         schema:
  *           type: integer
  *     responses:
  *       200:
- *         description: Perfil de usuario
+ *         description: Solicitud rechazada
  */
-router.get('/:id/profile', auth, userController.getUserProfile);
+router.post('/friends/:requestId/reject', auth, userController.rejectFriendRequest);
 
 module.exports = router;

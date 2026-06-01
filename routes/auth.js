@@ -195,7 +195,7 @@ router.post('/register', authController.register);
  *         description: Error del servidor
  */
 router.post('/login', authController.login);
-router.post('/logout', auth, authController.logout);
+router.post('/logout', authController.logout);  
 router.get('/status', auth, authController.getStatus);
 
 /**

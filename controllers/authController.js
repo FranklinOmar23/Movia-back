@@ -322,6 +322,18 @@ exports.register = async (req, res) => {
       [newUserId]
     );
     
+    // Crear grupo "Me gusta" automáticamente
+    try {
+      await pool.query(
+        `INSERT INTO watch_groups (user_id, name, description, is_public, created_at, updated_at)
+         VALUES (?, 'Me gusta', 'Grupo de películas y series favoritas', 1, NOW(), NOW())`,
+        [result.insertId]
+      );
+    } catch (groupError) {
+      console.error('❌ Error al crear grupo "Me gusta" automáticamente:', groupError);
+      // No bloqueamos el registro si falla la creación del grupo
+    }
+    
     // Generar token JWT
     const token = jwt.sign(
       { id: newUser[0].id, email: newUser[0].email, role: newUser[0].role },

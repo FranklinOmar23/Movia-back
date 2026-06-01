@@ -181,4 +181,13 @@ router.delete('/:groupId/items/:itemId', auth, groupController.removeItem);
  */
 router.post('/:groupId/share', auth, groupController.shareGroup);
 
+// Actualizar grupo (PATCH /api/groups/:groupId)
+router.patch('/:groupId', auth, groupController.updateGroup);
+
+// Actualizar permiso (can_edit)
+router.patch('/:groupId/share/:shareId', auth, groupController.updateGroupShare);
+
+// Eliminar permiso
+router.delete('/:groupId/share/:shareId', auth, groupController.removeGroupShare);
+
 module.exports = router;

@@ -147,8 +147,12 @@ router.post('/friends/:requestId/accept', auth, userController.acceptFriendReque
  *           type: integer
  *     responses:
  *       200:
- *         description: Solicitud rechazada
+ *         description: Perfil de usuario
  */
+router.get('/:id/profile', auth, userController.getUserProfile);
+
+module.exports = router;
+
 router.post('/friends/:requestId/reject', auth, userController.rejectFriendRequest);
 
 module.exports = router;

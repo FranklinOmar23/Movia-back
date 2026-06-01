@@ -113,26 +113,6 @@ router.get('/friends', auth, userController.getFriends);
 
 /**
  * @swagger
- * /api/users/{id}/profile:
- *   get:
- *     tags: [Users]
- *     summary: Obtener perfil de un usuario o del propio usuario
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Perfil de usuario
- */
-router.get('/:id/profile', auth, userController.getUserProfile);
-
-/**
- * @swagger
  * /api/users/friends/{requestId}/accept:
  *   post:
  *     tags: [Users]
@@ -150,5 +130,50 @@ router.get('/:id/profile', auth, userController.getUserProfile);
  *         description: Solicitud aceptada
  */
 router.post('/friends/:requestId/accept', auth, userController.acceptFriendRequest);
+
+/**
+ * @swagger
+ * /api/users/friends/{friendId}/cancel:
+ *   delete:
+ *     tags: [Users]
+ *     summary: Cancelar una solicitud de amistad enviada
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: friendId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del usuario al que le enviaste la solicitud
+ *     responses:
+ *       200:
+ *         description: Solicitud cancelada exitosamente
+ *       400:
+ *         description: ID inválido
+ *       404:
+ *         description: No existe solicitud pendiente enviada por ti
+ */
+router.delete('/friends/:friendId/cancel', auth, userController.cancelFriendRequest);
+
+/**
+ * @swagger
+ * /api/users/{id}/profile:
+ *   get:
+ *     tags: [Users]
+ *     summary: Obtener perfil de un usuario o del propio usuario
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Perfil de usuario
+ */
+router.get('/:id/profile', auth, userController.getUserProfile);
 
 module.exports = router;

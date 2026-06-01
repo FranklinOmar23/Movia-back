@@ -10,7 +10,6 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const auth = require('../middleware/auth');
 
-
 /**
  * @swagger
  * components:
@@ -42,6 +41,11 @@ const auth = require('../middleware/auth');
  *           enum: [user, admin]
  *           default: user
  *           example: user
+ *         referral_code:
+ *           type: string
+ *           description: Código de referido (opcional). Si es válido, el nuevo usuario quedará vinculado al referente.
+ *           example: REF123
+ *           nullable: true
  *     
  *     RegisterResponse:
  *       type: object
@@ -72,10 +76,14 @@ const auth = require('../middleware/auth');
  *               example: user
  *             is_active:
  *               type: boolean
- *               example: true
+ *               example: false
  *             created_at:
  *               type: string
  *               format: date-time
+ *             referral_code:
+ *               type: string
+ *               description: Código de referido generado para el nuevo usuario
+ *               example: REF1
  *     
  *     LoginRequest:
  *       type: object
@@ -117,7 +125,7 @@ const auth = require('../middleware/auth');
  *     tags:
  *       - Auth
  *     summary: Registrar un nuevo usuario
- *     description: Crea una nueva cuenta de usuario y devuelve un token JWT
+ *     description: Crea una nueva cuenta de usuario y devuelve un token JWT. Opcionalmente se puede enviar un código de referido.
  *     requestBody:
  *       required: true
  *       content:
@@ -301,6 +309,5 @@ router.get('/status', auth, authController.getStatus);
  */
 router.get('/me', auth, authController.getMe);  
 router.patch('/profile', auth, authController.updateProfile);
-
 
 module.exports = router;

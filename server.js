@@ -14,6 +14,7 @@ const watchHistoryRoutes = require('./routes/watchHistory');
 const watchlistRoutes = require('./routes/watchlist');
 const usersRoutes = require('./routes/users');
 const groupsRoutes = require('./routes/groups');
+const referralRoutes = require('./routes/referrals');
 
 // Job diario de cobros
 const { startDailyJob } = require('./jobs/dailyCharge');
@@ -107,7 +108,7 @@ app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/groups', groupsRoutes);
-
+app.use('/api/referrals', referralRoutes);
 // ──────────────────────────────────────────────────────
 // MANEJO DE ERRORES 404
 // ──────────────────────────────────────────────────────

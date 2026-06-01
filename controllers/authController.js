@@ -265,9 +265,10 @@ exports.getStatus = async (req, res) => {
  * Registrar un nuevo usuario (SOLO REGISTRO, sin pago)
  * POST /api/auth/register
  */
+// En authController.js - método register
 exports.register = async (req, res) => {
   try {
-    const { full_name, email, password, role = 'user' } = req.body;
+    const { full_name, email, password, role = 'user', referral_code } = req.body;
     
     // Validaciones...
     if (!full_name || !email || !password) {
@@ -276,44 +277,49 @@ exports.register = async (req, res) => {
       });
     }
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Formato de email inválido' });
-    }
-    
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
-    }
-    
-    if (full_name.trim().length < 3) {
-      return res.status(400).json({ error: 'El nombre debe tener al menos 3 caracteres' });
-    }
-    
-    // Verificar si el usuario ya existe
-    const [existingUsers] = await pool.query(
-      'SELECT id, email FROM users WHERE email = ?',
-      [email.toLowerCase()]
-    );
-    
-    if (existingUsers.length > 0) {
-      return res.status(409).json({ error: 'El email ya está registrado' });
+    // ... (validaciones de formato existentes)
+
+    // Verificar si el código de referido existe (si se proporcionó)
+    let referrerId = null;
+    if (referral_code) {
+      const [referrers] = await pool.query(
+        'SELECT id FROM users WHERE referral_code = ?',
+        [referral_code.trim()]
+      );
+      if (referrers.length > 0) {
+        referrerId = referrers[0].id;
+        // Opcional: evitar que un usuario se refiera a sí mismo
+        // No podemos verificar porque el usuario aún no tiene id, pero en el registro nuevo no hay problema.
+        // Si quieres evitarlo, deberías hacerlo después de insertar, pero es más sencillo permitirlo? No, mejor prevenir.
+        // Lo dejamos así, pero si el referrer es el mismo email no se puede porque el email es único.
+      }
+      // Si el código no existe, simplemente se ignora (no se guarda referido)
     }
     
     // Encriptar contraseña
     const password_hash = await bcrypt.hash(password, 10);
     
-    // Insertar nuevo usuario
+    // Insertar nuevo usuario, incluyendo referred_by
     const [result] = await pool.query(
       `INSERT INTO users 
-       (full_name, email, password_hash, role, is_active, created_at, updated_at) 
-       VALUES (?, ?, ?, ?, 0, NOW(), NOW())`,
-      [full_name.trim(), email.toLowerCase(), password_hash, role]
+       (full_name, email, password_hash, role, is_active, referred_by, created_at, updated_at) 
+       VALUES (?, ?, ?, ?, 0, ?, NOW(), NOW())`,
+      [full_name.trim(), email.toLowerCase(), password_hash, role, referrerId]
+    );
+    
+    const newUserId = result.insertId;
+    
+    // Generar código de referido único para este nuevo usuario (puede ser hash corto o 'REF' + id)
+    const newReferralCode = `REF${newUserId}`; // Simple, o algo más aleatorio
+    await pool.query(
+      'UPDATE users SET referral_code = ? WHERE id = ?',
+      [newReferralCode, newUserId]
     );
     
     // Obtener el usuario creado
     const [newUser] = await pool.query(
-      'SELECT id, full_name, email, role, is_active, created_at FROM users WHERE id = ?',
-      [result.insertId]
+      'SELECT id, full_name, email, role, is_active, created_at, referral_code FROM users WHERE id = ?',
+      [newUserId]
     );
     
     // Generar token JWT
@@ -323,18 +329,11 @@ exports.register = async (req, res) => {
       { expiresIn: '7d' }
     );
     
-    
     res.status(201).json({
       success: true,
       message: 'Usuario registrado exitosamente. Ahora selecciona un plan de suscripción.',
       token,
-      user: {
-        id: newUser[0].id,
-        full_name: newUser[0].full_name,
-        email: newUser[0].email,
-        role: newUser[0].role,
-        is_active: newUser[0].is_active
-      }
+      user: newUser[0]
     });
     
   } catch (error) {

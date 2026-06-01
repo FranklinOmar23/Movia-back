@@ -131,6 +131,65 @@ exports.createPayPalSubscription = async (req, res) => {
 };
 
 /**
+ * Registrar comisión por referido cuando se activa una suscripción
+ * @param {number} userId - ID del usuario que pagó (el referido)
+ * @param {number} subscriptionId - ID de la suscripción activada
+ * @param {number} amount - Monto del plan (opcional, lo obtenemos de la BD)
+ */
+async function registerReferralCommission(userId, subscriptionId) {
+  try {
+    // Obtener el usuario y su referente
+    const [users] = await pool.query(
+      `SELECT id, referred_by FROM users WHERE id = ?`,
+      [userId]
+    );
+    if (users.length === 0 || !users[0].referred_by) {
+      console.log(`Usuario ${userId} no fue referido por nadie.`);
+      return;
+    }
+    
+    const referrerId = users[0].referred_by;
+    
+    // Obtener el monto de la suscripción desde la tabla subscriptions y plan
+    const [subs] = await pool.query(
+      `SELECT s.id, sp.price 
+       FROM subscriptions s
+       JOIN subscription_plans sp ON s.plan_id = sp.id
+       WHERE s.id = ?`,
+      [subscriptionId]
+    );
+    if (subs.length === 0) return;
+    
+    const subscriptionAmount = parseFloat(subs[0].price);
+    const commissionPercentage = 0.10; // 10% - puedes cambiarlo o hacerlo configurable
+    const amountEarned = subscriptionAmount * commissionPercentage;
+    
+    // Verificar si ya se registró esta comisión (evitar duplicados)
+    const [existing] = await pool.query(
+      `SELECT id FROM referral_earnings 
+       WHERE referred_user_id = ? AND subscription_id = ?`,
+      [userId, subscriptionId]
+    );
+    if (existing.length > 0) {
+      console.log(`Comisión para usuario ${userId} en suscripción ${subscriptionId} ya existe.`);
+      return;
+    }
+    
+    // Insertar la comisión pendiente
+    await pool.query(
+      `INSERT INTO referral_earnings 
+       (referrer_id, referred_user_id, subscription_id, amount_earned, status, created_at)
+       VALUES (?, ?, ?, ?, 'pending', NOW())`,
+      [referrerId, userId, subscriptionId, amountEarned]
+    );
+    
+    console.log(`✅ Comisión registrada: referente ${referrerId} gana ${amountEarned} por usuario ${userId}`);
+  } catch (error) {
+    console.error('❌ Error registrando comisión por referido:', error);
+  }
+}
+
+/**
  * ✅ NUEVO: Guardar método de pago del usuario en BD
  * @param {number} userId
  * @param {string} paypalSubscriptionId
@@ -287,6 +346,7 @@ exports.paypalWebhook = async (req, res) => {
 
                 // ✅ NUEVO: Guardar método de pago (tarjeta)
                 await savePaymentMethod(sub.user_id, paypalSubscriptionId);
+                await registerReferralCommission(sub.user_id, sub.id);
 
                 // Correo de éxito
                 try {

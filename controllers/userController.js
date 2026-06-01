@@ -228,6 +228,35 @@ exports.acceptFriendRequest = async (req, res) => {
   }
 };
 
+exports.cancelFriendRequest = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const requestId = parseInt(req.params.requestId, 10);
+
+    if (Number.isNaN(requestId)) {
+      return res.status(400).json({ error: 'requestId inválido' });
+    }
+
+    // Buscar la solicitud por su ID, verificando que pertenezca al usuario y esté pendiente
+    const [rows] = await pool.query(
+      `SELECT id FROM friend_requests
+       WHERE id = ? AND requester_id = ? AND status = 'pending'`,
+      [requestId, userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'No existe una solicitud pendiente enviada por ti con ese ID' });
+    }
+
+    await pool.query('DELETE FROM friend_requests WHERE id = ?', [requestId]);
+
+    res.json({ message: 'Solicitud de amistad cancelada exitosamente' });
+  } catch (error) {
+    console.error('❌ Error en cancelFriendRequest:', error);
+    res.status(500).json({ error: 'Error al cancelar solicitud de amistad' });
+  }
+};
+
 exports.getFriends = async (req, res) => {
   try {
     const userId = req.user.id;

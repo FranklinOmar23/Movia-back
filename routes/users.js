@@ -133,6 +133,41 @@ router.post('/friends/:requestId/accept', auth, userController.acceptFriendReque
 
 /**
  * @swagger
+ * /api/users/friends/{requestId}/cancel:
+ *   delete:
+ *     tags: [Users]
+ *     summary: Cancelar una solicitud de amistad enviada (por ID de solicitud)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la solicitud (de la tabla friend_requests)
+ *     responses:
+ *       200:
+ *         description: Solicitud cancelada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Solicitud de amistad cancelada exitosamente
+ *       400:
+ *         description: requestId inválido
+ *       404:
+ *         description: No se encontró una solicitud pendiente con ese ID
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.delete('/friends/:requestId/cancel', auth, userController.cancelFriendRequest);
+
+/**
+ * @swagger
  * /api/users/friends/{requestId}/reject:
  *   post:
  *     tags: [Users]

@@ -1,10 +1,12 @@
 // socket/watchPartySocket.js
- //Inicializar: require('./socket/watchPartySocket')(io)
+// Inicializar: require('./socket/watchPartySocket')(io)
+
+const rooms = new Map();
 
 // rooms: Map { code -> { hostSocketId, members: Map { socketId -> { userId, name } }, videoState: { playing, currentTime, updatedAt } } }
 module.exports = (io) => {
   io.on('connection', (socket) => {
-    const userId = socket.handshake.auth?.userId;
+    const userId   = socket.handshake.auth?.userId;
     const userName = socket.handshake.auth?.userName || 'Usuario';
 
     // ── Unirse a la sala ──────────────────────────────────────────────────────
@@ -33,7 +35,9 @@ module.exports = (io) => {
       });
 
       // Al nuevo miembro le enviamos el estado actual del video
-      socket.emit('party:video-state', room.videoState);
+      // FIX: usar 'party:video-sync' para que useWatchParty lo procese igual
+      // que los updates en vivo (antes era 'party:video-state', evento distinto)
+      socket.emit('party:video-sync', room.videoState);
 
       // Lista actualizada de miembros
       const memberList = Array.from(room.members.entries()).map(([sid, m]) => ({
@@ -45,13 +49,24 @@ module.exports = (io) => {
       socket.data.partyCode = code;
     });
 
+    // ── FIX: handler para cuando el guest pide el estado actual explícitamente
+    // (useWatchParty emite 'party:request-video-state' al conectarse)
+    socket.on('party:request-video-state', ({ code }) => {
+      const room = rooms.get(code);
+      if (!room) return;
+      socket.emit('party:video-sync', room.videoState);
+    });
+
     // ── Sincronización de video (solo host puede controlar) ───────────────────
     socket.on('party:video-sync', ({ code, playing, currentTime }) => {
       const room = rooms.get(code);
       if (!room || room.hostSocketId !== socket.id) return;
 
       room.videoState = { playing, currentTime, updatedAt: Date.now() };
-      socket.to(code).emit('party:video-state', room.videoState);
+
+      // FIX: usar 'party:video-sync' (antes 'party:video-state') para que
+      // useWatchParty reciba los updates en vivo con el mismo listener
+      socket.to(code).emit('party:video-sync', room.videoState);
     });
 
     // ── Chat ──────────────────────────────────────────────────────────────────
@@ -77,7 +92,7 @@ module.exports = (io) => {
 
     // ── Señalización WebRTC ───────────────────────────────────────────────────
     socket.on('webrtc:offer', ({ code, targetSocketId, offer }) => {
-      io.to(targetSocketId).emit('webrtc:offer', {
+      io.sockets.sockets.get(targetSocketId)?.emit('webrtc:offer', {
         fromSocketId: socket.id,
         fromUserId: userId,
         fromName: userName,
@@ -86,14 +101,14 @@ module.exports = (io) => {
     });
 
     socket.on('webrtc:answer', ({ targetSocketId, answer }) => {
-      io.to(targetSocketId).emit('webrtc:answer', {
+      io.sockets.sockets.get(targetSocketId)?.emit('webrtc:answer', {
         fromSocketId: socket.id,
         answer,
       });
     });
 
     socket.on('webrtc:ice', ({ targetSocketId, candidate }) => {
-      io.to(targetSocketId).emit('webrtc:ice', {
+      io.sockets.sockets.get(targetSocketId)?.emit('webrtc:ice', {
         fromSocketId: socket.id,
         candidate,
       });
@@ -101,8 +116,6 @@ module.exports = (io) => {
 
     // ── Solicitud de amistad desde la sala ────────────────────────────────────
     socket.on('party:friend-request', ({ targetUserId }) => {
-      // El controlador REST /api/users/friends/request ya maneja la lógica;
-      // aquí solo notificamos en tiempo real al destinatario si está conectado
       const targetSockets = [...io.sockets.sockets.values()].filter(
         (s) => s.handshake.auth?.userId === targetUserId
       );
@@ -125,7 +138,6 @@ module.exports = (io) => {
         return;
       }
 
-      // Si el host se va, promover al siguiente
       if (room.hostSocketId === socket.id) {
         const nextSocketId = room.members.keys().next().value;
         room.hostSocketId = nextSocketId;
@@ -145,7 +157,7 @@ module.exports = (io) => {
       io.to(code).emit('party:members-list', memberList);
     };
 
-    socket.on('party:leave', ({ code }) => leaveParty(code));
-    socket.on('disconnect', () => leaveParty(socket.data?.partyCode));
+    socket.on('party:leave',  ({ code }) => leaveParty(code));
+    socket.on('disconnect',   ()         => leaveParty(socket.data?.partyCode));
   });
 };

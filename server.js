@@ -35,7 +35,7 @@ const io = new Server(httpServer, {
       'http://localhost:5173',
       'https://movia.arcodedominicana.com',
       'https://maroon-goshawk-691607.hostingersite.com',
-      'https://mintcream-meerkat-111545.hostingersite.com/'
+      'https://mintcream-meerkat-111545.hostingersite.com'
       
     ],
     credentials: true

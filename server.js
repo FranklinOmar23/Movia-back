@@ -51,6 +51,7 @@ const allowedOrigins = [
   'http://localhost:8080',
   'https://movia.arcodedominicana.com',
   'https://maroon-goshawk-691607.hostingersite.com',
+  'https://maroon-goshawk-691607.hostingersite.com'
 ];
 app.use(cors({
   origin: (origin, cb) =>

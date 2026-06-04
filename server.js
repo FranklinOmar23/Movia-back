@@ -36,7 +36,6 @@ const io = new Server(httpServer, {
       'https://movia.arcodedominicana.com',
       'https://maroon-goshawk-691607.hostingersite.com',
       'https://mintcream-meerkat-111545.hostingersite.com'
-      
     ],
     credentials: true
   }
@@ -52,17 +51,33 @@ const allowedOrigins = [
   'https://movia.arcodedominicana.com',
   'https://maroon-goshawk-691607.hostingersite.com',
   'https://mintcream-meerkat-111545.hostingersite.com'
-  
 ];
+
 app.use(cors({
   origin: (origin, cb) =>
     (!origin || allowedOrigins.includes(origin))
       ? cb(null, true)
       : cb(new Error('No permitido por CORS')),
   credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// ── FIX PREFLIGHT (OPTIONS) PARA HOSTINGER ───────────
+// Hostinger puede interceptar las peticiones OPTIONS antes de
+// que lleguen a Express. Este middleware las responde explícitamente.
+
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400'); // cache preflight 24h
+  return res.sendStatus(204);
+});
 
 // ── STRIPE WEBHOOK (raw body, ANTES de express.json) ─
 

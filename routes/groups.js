@@ -192,14 +192,14 @@ router.delete('/:groupId/share/:shareId', auth, groupController.removeGroupShare
 /**
  * @swagger
  * /api/groups/public:
- * get:
- * tags: [Groups]
- * summary: Obtener todos los grupos públicos
- * security:
- * - bearerAuth: []
- * responses:
- * 200:
- * description: Lista de grupos públicos
+ *   get:
+ *     tags: [Groups]
+ *     summary: Obtener todos los grupos públicos
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de grupos públicos
  */
 router.get('/public', auth, groupController.getPublicGroups);
 

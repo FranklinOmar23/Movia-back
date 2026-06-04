@@ -158,6 +158,7 @@ exports.getPublicGroups = async (req, res) => {
   try {
     const [groups] = await pool.query(
       `SELECT g.id, g.name, g.description, g.created_at, 
+              g.user_id AS owner_id,  // ← AGREGADO ESTO
               u.full_name AS owner_name,
               (SELECT COUNT(*) FROM watch_group_items WHERE group_id = g.id) AS items_count
        FROM watch_groups g
@@ -172,7 +173,6 @@ exports.getPublicGroups = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener grupos públicos' });
   }
 };
-
 exports.getGroupById = async (req, res) => {
   try {
     const userId = req.user.id;

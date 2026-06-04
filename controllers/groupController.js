@@ -164,23 +164,37 @@ exports.getGroupById = async (req, res) => {
       return res.status(400).json({ error: 'groupId inválido' });
     }
 
-    const allowed = await hasAccessToGroup(userId, groupId);
-    if (!allowed) {
-      return res.status(403).json({ error: 'No tienes acceso a este grupo' });
-    }
-
+    // 1. Obtener el grupo para verificar si existe y si es público
     const [groups] = await pool.query(
-      `SELECT id, user_id, name, description, is_public, created_at, updated_at
-       FROM watch_groups
-       WHERE id = ?`,
+      'SELECT id, user_id, name, description, is_public, created_at, updated_at FROM watch_groups WHERE id = ?',
       [groupId]
     );
-    
 
     if (groups.length === 0) {
       return res.status(404).json({ error: 'Grupo no encontrado' });
     }
 
+    const group = groups[0];
+
+    // 2. Lógica de acceso: 
+    // Permitir si es el dueño, si es público, o si tiene un registro de compartido
+    const isOwner = group.user_id === userId;
+    let hasAccess = isOwner || group.is_public === 1;
+
+    if (!hasAccess) {
+      // Si no es dueño ni público, verificar si está en la tabla de shares
+      const [shareRows] = await pool.query(
+        'SELECT id FROM watch_group_shares WHERE group_id = ? AND friend_id = ?',
+        [groupId, userId]
+      );
+      hasAccess = shareRows.length > 0;
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a este grupo' });
+    }
+
+    // 3. Obtener items
     const [items] = await pool.query(
       `SELECT id, tmdb_id, media_type, title, poster_path, added_at
        FROM watch_group_items
@@ -189,17 +203,39 @@ exports.getGroupById = async (req, res) => {
       [groupId]
     );
 
- const [shares] = await pool.query(
-  `SELECT id AS share_id, friend_id, can_edit, created_at 
-   FROM watch_group_shares
-   WHERE group_id = ?`,
-  [groupId]
-);
+    // 4. Obtener shares (solo si es el dueño para proteger privacidad)
+    let shares = [];
+    if (isOwner) {
+      [shares] = await pool.query(
+        `SELECT id AS share_id, friend_id, can_edit, created_at 
+         FROM watch_group_shares
+         WHERE group_id = ?`,
+        [groupId]
+      );
+    }
 
-    res.json({ group: groups[0], items, shares });
+    res.json({ group, items, shares });
   } catch (error) {
     console.error('❌ Error en getGroupById:', error);
     res.status(500).json({ error: 'Error al obtener grupo' });
+  }
+};
+exports.getPublicGroups = async (req, res) => {
+  try {
+    const [groups] = await pool.query(
+      `SELECT g.id, g.name, g.description, g.created_at, 
+              u.full_name AS owner_name,
+              (SELECT COUNT(*) FROM watch_group_items WHERE group_id = g.id) AS items_count
+       FROM watch_groups g
+       JOIN users u ON g.user_id = u.id
+       WHERE g.is_public = 1
+       ORDER BY g.created_at DESC`
+    );
+
+    res.json({ data: groups });
+  } catch (error) {
+    console.error('❌ Error en getPublicGroups:', error);
+    res.status(500).json({ error: 'Error al obtener grupos públicos' });
   }
 };
 

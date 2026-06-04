@@ -37,6 +37,7 @@ const io = new Server(httpServer, {
       'https://maroon-goshawk-691607.hostingersite.com',
       'https://mintcream-meerkat-111545.hostingersite.com'
       
+      
     ],
     credentials: true
   }

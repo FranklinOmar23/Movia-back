@@ -189,18 +189,6 @@ router.patch('/:groupId/share/:shareId', auth, groupController.updateGroupShare)
 
 // Eliminar permiso
 router.delete('/:groupId/share/:shareId', auth, groupController.removeGroupShare);
-/**
- * @swagger
- * /api/groups/public:
- *   get:
- *     tags: [Groups]
- *     summary: Obtener todos los grupos públicos
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lista de grupos públicos
- */
-router.get('/public', auth, groupController.getPublicGroups);
+router.get('/public', groupController.getPublicGroups);
 
 module.exports = router;

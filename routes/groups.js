@@ -190,5 +190,5 @@ router.patch('/:groupId/share/:shareId', auth, groupController.updateGroupShare)
 // Eliminar permiso
 router.delete('/:groupId/share/:shareId', auth, groupController.removeGroupShare);
 
-router.get('/public', auth, groupController.getPublicGroups);
+router.get('/public', groupController.getPublicGroups);
 module.exports = router;

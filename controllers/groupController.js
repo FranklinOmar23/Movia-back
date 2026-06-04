@@ -154,11 +154,15 @@ exports.getSharedWithMe = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener grupos compartidos contigo' });
   }
 };
+// controllers/groupController.js
 exports.getPublicGroups = async (req, res) => {
   try {
+    // ✅ No requerimos autenticación, pero si hay user, podemos usarlo para filtrar
+    const userId = req.user ? req.user.id : null;
+    
     const [groups] = await pool.query(
       `SELECT g.id, g.name, g.description, g.created_at, 
-              g.user_id AS owner_id,  // ← AGREGADO ESTO
+              g.user_id AS owner_id,
               u.full_name AS owner_name,
               (SELECT COUNT(*) FROM watch_group_items WHERE group_id = g.id) AS items_count
        FROM watch_groups g

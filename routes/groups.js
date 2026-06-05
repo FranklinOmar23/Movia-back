@@ -53,6 +53,18 @@ router.get('/', auth, groupController.getMyGroups);
 
 /**
  * @swagger
+ * /api/groups/public:
+ *   get:
+ *     tags: [Groups]
+ *     summary: Obtener grupos públicos (sin autenticación)
+ *     responses:
+ *       200:
+ *         description: Lista de grupos públicos
+ */
+router.get('/public', groupController.getPublicGroups);
+
+/**
+ * @swagger
  * /api/groups/shared:
  *   get:
  *     tags: [Groups]
@@ -84,6 +96,38 @@ router.get('/shared', auth, groupController.getSharedWithMe);
  *         description: Detalle del grupo con items y permisos
  */
 router.get('/:groupId', auth, groupController.getGroupById);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}:
+ *   patch:
+ *     tags: [Groups]
+ *     summary: Actualizar un grupo
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               is_public:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Grupo actualizado
+ */
+router.patch('/:groupId', auth, groupController.updateGroup);
 
 /**
  * @swagger
@@ -181,14 +225,63 @@ router.delete('/:groupId/items/:itemId', auth, groupController.removeItem);
  */
 router.post('/:groupId/share', auth, groupController.shareGroup);
 
-// Actualizar grupo (PATCH /api/groups/:groupId)
-router.patch('/:groupId', auth, groupController.updateGroup);
-
-// Actualizar permiso (can_edit)
+/**
+ * @swagger
+ * /api/groups/{groupId}/share/{shareId}:
+ *   patch:
+ *     tags: [Groups]
+ *     summary: Actualizar permiso de compartición
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: shareId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               can_edit:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Permiso actualizado
+ */
 router.patch('/:groupId/share/:shareId', auth, groupController.updateGroupShare);
 
-// Eliminar permiso
+/**
+ * @swagger
+ * /api/groups/{groupId}/share/{shareId}:
+ *   delete:
+ *     tags: [Groups]
+ *     summary: Eliminar permiso de compartición
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: shareId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Permiso eliminado
+ */
 router.delete('/:groupId/share/:shareId', auth, groupController.removeGroupShare);
-router.get('/public', groupController.getPublicGroups);
 
 module.exports = router;

@@ -166,28 +166,10 @@ router.post('/friends/:requestId/accept', auth, userController.acceptFriendReque
  */
 router.delete('/friends/:requestId/cancel', auth, userController.cancelFriendRequest);
 
-/**
- * @swagger
- * /api/users/friends/{requestId}/reject:
- *   post:
- *     tags: [Users]
- *     summary: Rechazar solicitud de amistad
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: requestId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Perfil de usuario
- */
-router.get('/:id/profile', auth, userController.getUserProfile);
-
-module.exports = router;
-
 router.post('/friends/:requestId/reject', auth, userController.rejectFriendRequest);
+
+router.delete('/friends/:friendId/unfriend', auth, userController.unfriendUser);
+
+router.get('/:id/profile', auth, userController.getUserProfile);
 
 module.exports = router;

@@ -286,7 +286,7 @@ exports.getReceivedRequests = async (req, res) => {
               u.id AS user_id, u.full_name, u.email, u.role, u.is_active
        FROM friend_requests fr
        JOIN users u ON u.id = fr.requester_id
-       WHERE fr.receiver_id = ?
+       WHERE fr.receiver_id = ? AND fr.status = 'pending'
        ORDER BY fr.created_at DESC`,
       [userId]
     );
@@ -307,7 +307,7 @@ exports.getSentRequests = async (req, res) => {
               u.id AS user_id, u.full_name, u.email, u.role, u.is_active
        FROM friend_requests fr
        JOIN users u ON u.id = fr.receiver_id
-       WHERE fr.requester_id = ?
+       WHERE fr.requester_id = ? AND fr.status = 'pending'
        ORDER BY fr.created_at DESC`,
       [userId]
     );
@@ -359,5 +359,35 @@ exports.rejectFriendRequest = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en rejectFriendRequest:', error);
     res.status(500).json({ error: 'Error al rechazar solicitud de amistad' });
+  }
+};
+
+exports.unfriendUser = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const friendId = parseInt(req.params.friendId, 10);
+
+    if (Number.isNaN(friendId)) {
+      return res.status(400).json({ error: 'friendId inválido' });
+    }
+    if (friendId === userId) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const [result] = await pool.query(
+      `DELETE FROM friend_requests
+       WHERE ((requester_id = ? AND receiver_id = ?) OR (requester_id = ? AND receiver_id = ?))
+         AND status = 'accepted'`,
+      [userId, friendId, friendId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'No existe una amistad con este usuario' });
+    }
+
+    res.json({ message: 'Amistad eliminada exitosamente' });
+  } catch (error) {
+    console.error('❌ Error en unfriendUser:', error);
+    res.status(500).json({ error: 'Error al eliminar amistad' });
   }
 };

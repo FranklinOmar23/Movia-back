@@ -160,9 +160,7 @@ async function registerReferralCommission(userId, subscriptionId) {
     );
     if (subs.length === 0) return;
     
-    const subscriptionAmount = parseFloat(subs[0].price);
-    const commissionPercentage = 0.10; // 10% - puedes cambiarlo o hacerlo configurable
-    const amountEarned = subscriptionAmount * commissionPercentage;
+    const amountEarned = 50; // comisión fija de 50 pesos por referido
     
     // Verificar si ya se registró esta comisión (evitar duplicados)
     const [existing] = await pool.query(

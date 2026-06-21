@@ -50,10 +50,10 @@ const allowedOrigins = [
   'http://localhost:3000', 'http://localhost:3001',
   'http://localhost:5173', 'http://localhost:4200',
   'http://localhost:8080',
-  'https://movia.arcodedominicana.com',
+  'https://movia.arcodominicana.com',       // URL real de producción
+  'https://movia.arcodedominicana.com',      // URL alternativa (por si acaso)
   'https://maroon-goshawk-691607.hostingersite.com',
-  'https://mintcream-meerkat-111545.hostingersite.com'
-  
+  'https://mintcream-meerkat-111545.hostingersite.com',
 ];
 app.use(cors({
   origin: (origin, cb) =>

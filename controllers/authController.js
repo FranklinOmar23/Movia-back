@@ -206,14 +206,18 @@ exports.getMe = async (req, res) => {
     const user = users[0];
 
     // Obtener el estado de la suscripción activa más reciente
+    // Se verifica que el período no haya vencido (o que no tenga fecha de fin definida)
     const [subs] = await pool.query(
-      `SELECT status FROM subscriptions 
-       WHERE user_id = ? AND status = 'active' 
+      `SELECT status, current_period_end FROM subscriptions
+       WHERE user_id = ?
+         AND status = 'active'
+         AND (current_period_end IS NULL OR current_period_end > NOW())
        ORDER BY created_at DESC LIMIT 1`,
       [userId]
     );
 
     user.subscription_status = subs.length > 0 ? subs[0].status : null;
+    user.subscription_end    = subs.length > 0 ? subs[0].current_period_end : null;
 
     const [statusRows] = await pool.query(
       'SELECT is_online, last_login_at, last_logout_at, last_seen FROM user_status WHERE user_id = ?',

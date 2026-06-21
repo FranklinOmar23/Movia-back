@@ -184,7 +184,7 @@ module.exports = function (io) {
 
       // Inicializar estado de reproducción si es la primera vez
       if (!roomState.has(safeCode)) {
-        roomState.set(safeCode, { playing: false, currentTime: 0, updatedAt: Date.now() });
+        roomState.set(safeCode, { playing: false, currentTime: 0, updatedAt: Date.now(), screenSharing: false });
       }
 
       // Notificar a los demás para WebRTC peer negotiation
@@ -194,9 +194,14 @@ module.exports = function (io) {
         name: userName,
       });
 
-      // Enviar estado actual de reproducción al guest inmediatamente
+      // Enviar estado actual al guest inmediatamente
       if (!isHost) {
-        socket.emit('party:video-sync', roomState.get(safeCode));
+        const state = roomState.get(safeCode);
+        socket.emit('party:video-sync', state);
+        // Informar si el host ya está compartiendo pantalla
+        if (state?.screenSharing) {
+          socket.emit('party:screen-sharing', { sharing: true });
+        }
       }
 
       broadcastMembers(io, safeCode);
@@ -330,6 +335,17 @@ module.exports = function (io) {
         fromSocketId: socket.id,
         candidate,
       });
+    });
+
+    // ── party:screen-sharing — solo el host puede emitir esto ──────────────
+    socket.on('party:screen-sharing', ({ code, sharing }) => {
+      if (!code) return;
+      const safeCode = code.toUpperCase().slice(0, 8);
+      const meta = socketMeta.get(socket.id);
+      if (!meta || !meta.isHost || meta.code !== safeCode) return;
+      const state = roomState.get(safeCode) || { playing: false, currentTime: 0, updatedAt: Date.now() };
+      roomState.set(safeCode, { ...state, screenSharing: Boolean(sharing) });
+      socket.to(safeCode).emit('party:screen-sharing', { sharing: Boolean(sharing) });
     });
 
     // ── party:leave ─────────────────────────────────────────────────────────

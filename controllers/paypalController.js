@@ -390,14 +390,28 @@ exports.paypalWebhook = async (req, res) => {
 
                     if (subscriptions.length > 0) {
                         await pool.query(
-                            `INSERT INTO payment_transactions 
-                             (user_id, subscription_id, processor, processor_transaction_id, 
+                            `INSERT INTO payment_transactions
+                             (user_id, subscription_id, processor, processor_transaction_id,
                               amount, currency, status, billing_period_start, billing_period_end)
-                             VALUES (?, ?, 'paypal', ?, ?, ?, 'succeeded', NOW(), DATE_ADD(NOW(), INTERVAL 30 DAY))`,
+                             VALUES (?, ?, 'paypal', ?, ?, ?, 'succeeded', NOW(), DATE_ADD(NOW(), INTERVAL 15 DAY))`,
                             [subscriptions[0].user_id, subscriptions[0].id, transactionId, amount, currency]
                         );
 
-                        console.log(`✅ Transacción registrada en BD`);
+                        // Renovar la suscripción en la BD: actualizar período y mantener usuario activo
+                        await pool.query(
+                            `UPDATE subscriptions
+                             SET status = 'active',
+                                 current_period_start = NOW(),
+                                 current_period_end   = DATE_ADD(NOW(), INTERVAL 15 DAY)
+                             WHERE id = ?`,
+                            [subscriptions[0].id]
+                        );
+                        await pool.query(
+                            'UPDATE users SET is_active = 1, updated_at = NOW() WHERE id = ?',
+                            [subscriptions[0].user_id]
+                        );
+
+                        console.log(`✅ Transacción registrada y suscripción renovada para usuario ${subscriptions[0].user_id}`);
 
                         const [users] = await pool.query(
                             'SELECT email, full_name FROM users WHERE id = ?',

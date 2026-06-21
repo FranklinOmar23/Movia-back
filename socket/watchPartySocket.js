@@ -18,7 +18,7 @@ const rateLimits = new Map();
 const RATE_LIMITS = {
   'party:chat':     { max: 10, windowMs: 5_000  },  // 10 msgs / 5s
   'party:reaction': { max: 20, windowMs: 10_000 },  // 20 reactions / 10s
-  'webrtc:offer':   { max: 5,  windowMs: 10_000 },  // 5 offers / 10s (renegociaciones)
+  'webrtc:offer':   { max: 30, windowMs: 10_000 },  // Suficiente para renegociaciones de screen share + cámara
 };
 
 function isRateLimited(socketId, event) {

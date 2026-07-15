@@ -1,4 +1,9 @@
 const pool = require('../db');
+const axios = require('axios');
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_KEY = process.env.TMDB_API_KEY;
+const TMDB_IMG_BASE = 'https://image.tmdb.org/t/p';
 
 /**
  * GET /api/watch-history/continue-watching
@@ -9,8 +14,12 @@ exports.getContinueWatching = async (req, res) => {
     const userId = req.user.id;
     const limit = parseInt(req.query.limit) || 10;
 
+    // Se deduplica por (tmdb_id, media_type) quedándonos con la fila más
+    // reciente: datos históricos pueden tener filas duplicadas por content
+    // (ver saveProgress) y sin esto un mismo título podía aparecer dos veces
+    // o esconder el progreso real detrás de una fila vieja.
     const [items] = await pool.query(`
-      SELECT 
+      SELECT
         wh.tmdb_id,
         wh.media_type,
         wh.progress_pct,
@@ -21,9 +30,17 @@ exports.getContinueWatching = async (req, res) => {
         wh.title,
         wh.poster_path,
         wh.last_watched
-      FROM watch_history wh
-      WHERE wh.user_id = ?
-      AND wh.progress_pct >= 1
+      FROM (
+        SELECT wh.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY wh.tmdb_id, wh.media_type
+            ORDER BY wh.last_watched DESC, wh.id DESC
+          ) AS rn
+        FROM watch_history wh
+        WHERE wh.user_id = ?
+      ) wh
+      WHERE wh.rn = 1
+        AND wh.progress_pct >= 1
         AND wh.progress_pct < 95
       ORDER BY wh.last_watched DESC
       LIMIT ?
@@ -46,7 +63,7 @@ exports.getProgress = async (req, res) => {
     const { mediaType, tmdbId } = req.params;
 
     const [rows] = await pool.query(`
-      SELECT 
+      SELECT
         progress_pct,
         progress_seconds,
         season,
@@ -55,6 +72,8 @@ exports.getProgress = async (req, res) => {
         last_watched
       FROM watch_history
       WHERE user_id = ? AND tmdb_id = ? AND media_type = ?
+      ORDER BY last_watched DESC
+      LIMIT 1
     `, [userId, tmdbId, mediaType]);
 
     if (rows.length === 0) {
@@ -129,16 +148,17 @@ exports.saveProgress = async (req, res) => {
     console.log(`   progress: ${progressPct}% (${progressSeconds}s)`);
     console.log(`   genreIds original: ${genreIds} → JSON: ${genreIdsJson}`);
 
-    // Verificar si ya existe
+    // Verificar si ya existe (la más reciente primero — puede haber duplicados
+    // heredados de antes de que existiera esta protección; ver limpieza abajo)
     const [existing] = await pool.query(
-      'SELECT id FROM watch_history WHERE user_id = ? AND tmdb_id = ? AND media_type = ?',
+      'SELECT id FROM watch_history WHERE user_id = ? AND tmdb_id = ? AND media_type = ? ORDER BY last_watched DESC, id DESC',
       [userId, tmdbId, mediaType]
     );
 
     if (existing.length > 0) {
-      // Actualizar registro existente
+      // Actualizar el registro más reciente
       await pool.query(`
-        UPDATE watch_history 
+        UPDATE watch_history
         SET progress_pct = ?,
             progress_seconds = ?,
             season = ?,
@@ -161,6 +181,15 @@ exports.saveProgress = async (req, res) => {
         existing[0].id
       ]);
       console.log(`   ✅ Registro actualizado (id: ${existing[0].id})`);
+
+      // Auto-limpieza: si había duplicados de user_id+tmdb_id+media_type
+      // (bug histórico sin constraint UNIQUE), eliminar los sobrantes para
+      // que futuras lecturas sean siempre consistentes.
+      if (existing.length > 1) {
+        const staleIds = existing.slice(1).map(r => r.id);
+        await pool.query('DELETE FROM watch_history WHERE id IN (?)', [staleIds]);
+        console.log(`   🧹 Duplicados eliminados (ids: ${staleIds.join(', ')})`);
+      }
     } else {
       // Insertar nuevo registro
       const [result] = await pool.query(`
@@ -304,5 +333,116 @@ exports.getAllHistory = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en getAllHistory:', error);
     res.status(500).json({ error: 'Error al obtener historial' });
+  }
+};
+
+/**
+ * GET /api/watch-history/next-episode/:tvId/:season/:episode
+ * Dado el episodio actual de una serie, devuelve los datos del siguiente
+ * episodio (misma temporada, o el episodio 1 de la siguiente temporada si
+ * el actual era el último). Usado por el frontend para el popup de
+ * "siguiente episodio" con auto-avance.
+ */
+exports.getNextEpisode = async (req, res) => {
+  try {
+    const tvId = Number(req.params.tvId);
+    const season = Number(req.params.season);
+    const episode = Number(req.params.episode);
+
+    if (!tvId || !season || !episode) {
+      return res.status(400).json({ error: 'tvId, season y episode son requeridos' });
+    }
+
+    const fetchSeason = async (seasonNumber) => {
+      try {
+        const { data } = await axios.get(`${TMDB_BASE}/tv/${tvId}/season/${seasonNumber}`, {
+          params: { api_key: TMDB_KEY, language: 'es-ES' }
+        });
+        return data;
+      } catch (err) {
+        if (err.response?.status === 404) return null;
+        throw err;
+      }
+    };
+
+    const currentSeasonData = await fetchSeason(season);
+    if (!currentSeasonData) {
+      return res.status(404).json({ error: 'Temporada no encontrada' });
+    }
+
+    const episodes = currentSeasonData.episodes || [];
+    const currentIdx = episodes.findIndex(ep => ep.episode_number === episode);
+
+    let nextEpRaw = currentIdx >= 0 && currentIdx < episodes.length - 1
+      ? episodes[currentIdx + 1]
+      : null;
+    let nextSeasonNumber = season;
+
+    // Si era el último episodio de la temporada, buscar el episodio 1 de la siguiente
+    if (!nextEpRaw) {
+      const nextSeasonData = await fetchSeason(season + 1);
+      if (nextSeasonData?.episodes?.length) {
+        nextEpRaw = nextSeasonData.episodes[0];
+        nextSeasonNumber = season + 1;
+      }
+    }
+
+    if (!nextEpRaw) {
+      return res.json({ hasNext: false });
+    }
+
+    res.json({
+      hasNext: true,
+      nextEpisode: {
+        tvId,
+        season: nextSeasonNumber,
+        episode: nextEpRaw.episode_number,
+        episodeId: nextEpRaw.id,
+        name: nextEpRaw.name || `Episodio ${nextEpRaw.episode_number}`,
+        overview: nextEpRaw.overview || '',
+        airDate: nextEpRaw.air_date || null,
+        runtime: nextEpRaw.runtime || null,
+        thumbnailPath: nextEpRaw.still_path || null,
+        thumbnailUrl: nextEpRaw.still_path ? `${TMDB_IMG_BASE}/w300${nextEpRaw.still_path}` : null
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en getNextEpisode:', error.message);
+    res.status(500).json({ error: 'Error al obtener el siguiente episodio' });
+  }
+};
+
+/**
+ * GET /api/watch-history/stats
+ * Resumen de visualización del usuario: tiempo total visto, cantidad de
+ * títulos completados/en progreso y desglose por tipo de contenido.
+ */
+exports.getWatchStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [[totals]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total_titles,
+        COALESCE(SUM(progress_seconds), 0) AS total_seconds_watched,
+        SUM(CASE WHEN progress_pct >= 95 THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN progress_pct >= 1 AND progress_pct < 95 THEN 1 ELSE 0 END) AS in_progress,
+        SUM(CASE WHEN media_type = 'movie' THEN 1 ELSE 0 END) AS movies,
+        SUM(CASE WHEN media_type = 'tv' THEN 1 ELSE 0 END) AS series
+      FROM watch_history
+      WHERE user_id = ?
+    `, [userId]);
+
+    res.json({
+      totalTitles: totals.total_titles,
+      totalMinutesWatched: Math.round((totals.total_seconds_watched || 0) / 60),
+      completed: totals.completed,
+      inProgress: totals.in_progress,
+      movies: totals.movies,
+      series: totals.series
+    });
+  } catch (error) {
+    console.error('❌ Error en getWatchStats:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas de visualización' });
   }
 };

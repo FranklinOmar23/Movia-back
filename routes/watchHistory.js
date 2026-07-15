@@ -176,4 +176,51 @@ router.get('/top-genres', auth, watchHistoryController.getTopGenres);
  */
 router.get('/all', auth, watchHistoryController.getAllHistory);
 
+/**
+ * @swagger
+ * /api/watch-history/next-episode/{tvId}/{season}/{episode}:
+ *   get:
+ *     tags: [Watch History]
+ *     summary: Obtener datos del siguiente episodio de una serie
+ *     description: Dado el episodio actual, devuelve el siguiente (o el episodio 1 de la siguiente temporada si era el último de la temporada actual). Usado para el popup de auto-avance.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tvId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: season
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: episode
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Datos del siguiente episodio, o hasNext=false si era el final de la serie
+ *       404:
+ *         description: Temporada no encontrada
+ */
+router.get('/next-episode/:tvId/:season/:episode', auth, watchHistoryController.getNextEpisode);
+
+/**
+ * @swagger
+ * /api/watch-history/stats:
+ *   get:
+ *     tags: [Watch History]
+ *     summary: Obtener estadísticas de visualización del usuario
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Resumen de tiempo visto, títulos completados/en progreso y desglose por tipo
+ */
+router.get('/stats', auth, watchHistoryController.getWatchStats);
+
 module.exports = router;
